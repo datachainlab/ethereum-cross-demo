@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ==============================================================================
+# Configuration
+# ==============================================================================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="${SCRIPT_DIR}/../.."
+BASE_DIR="${SCRIPT_DIR}/../.erc20cli"
+DEPLOYMENTS_FILE="${ROOT_DIR}/deployments.toml"
+
+# Chain Settings
+CHAIN_ID_COORD=31337
+PORT_COORD=8545
+
+CHAIN_ID_PART=31338
+PORT_PART=8546
+
+# Path to be written inside YAML (relative to execution context)
+CONFIG_REL_PATH=".erc20cli"
+
+# Check dependencies
+if ! command -v cast &> /dev/null; then
+    echo "Error: 'cast' command not found. Please install Foundry."
+    exit 1
+fi
+
+if [ ! -f "$DEPLOYMENTS_FILE" ]; then
+    echo "Error: ${DEPLOYMENTS_FILE} not found."
+    exit 1
+fi
+
+echo "Reading configuration from deployments.toml..."
+
+# ==============================================================================
+# Extraction & Key Derivation
+# ==============================================================================
+
+# Helper to extract values from TOML
+extract_toml() {
+    local key=$1
+    grep "${key} =" "$DEPLOYMENTS_FILE" | head -n 1 | awk -F '"' '{print $2}'
+}
+
+ERC20_ADDR=$(extract_toml 'my_erc20')
+CROSS_ADDR=$(extract_toml 'cross_simple_module')
+MNEMONIC=$(extract_toml 'mnemonic')
+
+if [[ -z "$ERC20_ADDR" || -z "$CROSS_ADDR" || -z "$MNEMONIC" ]]; then
+    echo "Error: Failed to extract necessary values from deployments.toml"
+    exit 1
+fi
+
+echo "  ERC20 Address: $ERC20_ADDR"
+echo "  Cross Module : $CROSS_ADDR"
+
+# Derive private keys
+derive_key() {
+    local idx=$1
+    local key
+    key=$(cast wallet private-key --mnemonic "$MNEMONIC" --mnemonic-index "$idx")
+    echo "${key#0x}"
+}
+
+echo "Deriving private keys..."
+KEY_PLATFORMER=$(derive_key 0)
+KEY_ALICE=$(derive_key 1)
+KEY_BOB=$(derive_key 2)
+
+# ==============================================================================
+# Config Generation Logic
+# ==============================================================================
+
+generate_chain_config() {
+    local chain_name=$1
+    local chain_id=$2
+    local port=$3
+    local host="ws://127.0.0.1:${port}"
+
+    echo "Setting up ${chain_name} (ChainID: ${chain_id}, Port: ${port})..."
+
+    local chain_dir="${BASE_DIR}/${chain_name}"
+    mkdir -p "${chain_dir}/wallet"
+
+    local users=("platformer" "alice" "bob")
+    local keys=("${KEY_PLATFORMER}" "${KEY_ALICE}" "${KEY_BOB}")
+
+    for i in "${!users[@]}"; do
+        local user="${users[$i]}"
+        local key="${keys[$i]}"
+        
+        local wallet_file="${chain_dir}/wallet/${user}"
+        local config_file="${chain_dir}/${user}.yaml"
+        local yaml_wallet_path="${CONFIG_REL_PATH}/${chain_name}/wallet/${user}"
+
+        # 1. Write Wallet File
+        echo "${key}" > "${wallet_file}"
+
+        # 2. Write YAML Config
+        cat <<EOF > "${config_file}"
+blockchain-host: ${host}
+chain-id: ${chain_id}
+cross-module-address: ${CROSS_ADDR}
+erc20-token-address: ${ERC20_ADDR}
+wallet-file: ${yaml_wallet_path}
+watch-timeout-sec: 10
+EOF
+    done
+}
+
+# ==============================================================================
+# Execution
+# ==============================================================================
+
+# Coordinator Chain
+generate_chain_config "coordinator" "${CHAIN_ID_COORD}" "${PORT_COORD}"
+
+# Participant Chain
+generate_chain_config "participant" "${CHAIN_ID_PART}" "${PORT_PART}"
+
+echo "Done! Configuration generated in ${BASE_DIR}"

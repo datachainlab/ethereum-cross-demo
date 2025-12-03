@@ -1,0 +1,23 @@
+version: "3.3"
+services:
+  development:
+    image: ghcr.io/foundry-rs/foundry:stable
+    entrypoint: ["anvil"]
+    command:
+      [
+        "--host","0.0.0.0",
+        "--port","8546",
+        "--chain-id","31338",
+        "--accounts","10",
+        "--mnemonic","math razor capable expose worth grape metal sunset metal sudden usage scheme",
+        "--gas-limit","1000000000",
+        "--block-time","1"
+      ]
+    ports:
+      - "8546:8546"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-s", "http://127.0.0.1:8546", "-H", "Content-Type: application/json", "-d", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_blockNumber\",\"params\":[]}"]
+      interval: 2s
+      timeout: 1s
+      retries: 30

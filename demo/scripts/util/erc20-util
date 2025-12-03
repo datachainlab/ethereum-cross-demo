@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+
+set -eu
+
+# Script location
+CUR_DIR=$(cd $(dirname ${BASH_SOURCE:-$0}); pwd)
+ROOT_DIR=$(cd ${CUR_DIR}/../../..; pwd)
+
+source ${CUR_DIR}/color
+
+ERC20CLI_CONFIG_DIR=${ROOT_DIR}/demo/.erc20cli
+ERC20CLI_BINARY=${ROOT_DIR}/demo/bin/erc20cli
+DEPLOYMENTS_FILE=${ROOT_DIR}/deployments.toml
+
+# Check binary
+if [ ! -f "$ERC20CLI_BINARY" ]; then
+    echo "Warning: erc20cli binary not found at $ERC20CLI_BINARY"
+    echo "Please build it first: go build -o build/erc20cli ./cli"
+fi
+
+# Check config file
+if [ ! -f "$DEPLOYMENTS_FILE" ]; then
+    echo "Error: deployments.toml not found at $DEPLOYMENTS_FILE"
+    exit 1
+fi
+
+# --- Load Configuration from deployments.toml ---
+
+# Extract Mnemonic (take the first occurrence)
+MNEMONIC=$(grep 'mnemonic =' "$DEPLOYMENTS_FILE" | head -n 1 | cut -d '"' -f 2)
+
+if [ -z "$MNEMONIC" ]; then
+    echo "Error: Failed to extract 'mnemonic' from deployments.toml"
+    exit 1
+fi
+
+# Extract Bridge Contract Address (take the first occurrence)
+BRIDGE_CONTRACT_ADDR=$(grep 'my_erc20_transfer_module =' "$DEPLOYMENTS_FILE" | head -n 1 | cut -d '"' -f 2)
+
+if [ -z "$BRIDGE_CONTRACT_ADDR" ]; then
+    echo "Error: Failed to extract 'my_erc20_transfer_module' from deployments.toml"
+    exit 1
+fi
+
+println "Loaded configuration from deployments.toml:"
+println "  Bridge Contract: $BRIDGE_CONTRACT_ADDR"
+
+# --- Command Aliases ---
+
+# Coordinator Chain (31337)
+ERC20CLI_COORDINATOR_PLATFORMER="${ERC20CLI_BINARY} --config ${ERC20CLI_CONFIG_DIR}/coordinator/platformer.yaml"
+ERC20CLI_COORDINATOR_ALICE="${ERC20CLI_BINARY} --config ${ERC20CLI_CONFIG_DIR}/coordinator/alice.yaml"
+ERC20CLI_COORDINATOR_BOB="${ERC20CLI_BINARY} --config ${ERC20CLI_CONFIG_DIR}/coordinator/bob.yaml"
+
+# Participant Chain (31338)
+ERC20CLI_PARTICIPANT_PLATFORMER="${ERC20CLI_BINARY} --config ${ERC20CLI_CONFIG_DIR}/participant/platformer.yaml"
+ERC20CLI_PARTICIPANT_ALICE="${ERC20CLI_BINARY} --config ${ERC20CLI_CONFIG_DIR}/participant/alice.yaml"
+ERC20CLI_PARTICIPANT_BOB="${ERC20CLI_BINARY} --config ${ERC20CLI_CONFIG_DIR}/participant/bob.yaml"
+
+println "--- ERC20 CLI Aliases Configured ---"
+println "Config Dir: ${ERC20CLI_CONFIG_DIR}"
+
+# --- Address Derivation ---
+
+# Check for 'cast'
+if ! command -v cast &> /dev/null; then
+    echo "Error: 'cast' command not found. Please install Foundry."
+    exit 1
+fi
+
+# Derive addresses and keys
+# Platformer (Index 0)
+PLATFORMER_ADDRESS=$(cast wallet address --mnemonic "$MNEMONIC" --mnemonic-index 0)
+PLATFORMER_PRIVATE_KEY=$(cast wallet private-key --mnemonic "$MNEMONIC" --mnemonic-index 0)
+
+# Alice (Index 1)
+ALICE_ADDRESS=$(cast wallet address --mnemonic "$MNEMONIC" --mnemonic-index 1)
+ALICE_PRIVATE_KEY=$(cast wallet private-key --mnemonic "$MNEMONIC" --mnemonic-index 1)
+
+# Bob (Index 2)
+BOB_ADDRESS=$(cast wallet address --mnemonic "$MNEMONIC" --mnemonic-index 2)
+BOB_PRIVATE_KEY=$(cast wallet private-key --mnemonic "$MNEMONIC" --mnemonic-index 2)
+
+println "Derived Addresses:"
+println "  Platformer: $PLATFORMER_ADDRESS"
+println "  Alice:      $ALICE_ADDRESS"
+println "  Bob:        $BOB_ADDRESS"
+
+# --- Utility Functions ---
+
+LATEST_RESULT=""
+
+function print() {
+  local cmd=$1
+  local display=$2
+
+  echo "[$(date "+%Y/%m/%d %H:%M:%S")] $cmd" | awk \
+  -v binary="${ERC20CLI_BINARY}" \
+  -v disp="$display" \
+  '{ sub(binary, disp); print $0}'
+
+  local res
+  local status=0
+  
+  res="$($cmd)" || status=$?
+  
+  LATEST_RESULT=${res##*$'\n'}
+  
+  if test $status -eq 0; then
+    if command -v successln &> /dev/null; then
+        successln "${res##*$'\n'}"
+    else
+        echo "${res##*$'\n'}"
+    fi
+  else
+    if command -v errorln &> /dev/null; then
+        errorln "${res}"
+    else
+        echo "Error: ${res}"
+    fi
+  fi
+  return $status
+}
+
+function printERC20() {
+  print "$1" erc20cli
+}
