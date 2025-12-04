@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ==== 設定 =============================================================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="${SCRIPT_DIR}/../.."
+
+FIXTURES_DIR="${ROOT_DIR}/demo/fixtures"
+CONF_DIR="${ROOT_DIR}/demo/config"
+
+# anvil の chain-id（必要なら env で上書き）
+CHAIN0_ID="${CHAIN0_ID:-31337}"  # ibc0 (coordinator)
+CHAIN1_ID="${CHAIN1_ID:-31338}"  # ibc1 (participant)
+
+# forge script のパス（プロジェクトに合わせて調整）
+COORDINATOR_SCRIPT_PATH="DeployAll.s.sol"
+PARTICIPANT_SCRIPT_PATH="DeployAll.s.sol"
+
+# broadcast の run-latest.json
+BROADCAST0="${ROOT_DIR}/broadcast/${COORDINATOR_SCRIPT_PATH}/${CHAIN0_ID}/run-latest.json"
+BROADCAST1="${ROOT_DIR}/broadcast/${PARTICIPANT_SCRIPT_PATH}/${CHAIN1_ID}/run-latest.json"
+
+OUT_DIR="${ROOT_DIR}/out"
+
+# yrly が読めない ABI を除外するリスト
+# 必要になったらここに増やせば OK
+EXCLUDE_ABI_NAMES=("LibVariable")
+
+# ==== helper 関数 =======================================================
+
+in_exclude_list() {
+  local name="$1"
+  for ex in "${EXCLUDE_ABI_NAMES[@]}"; do
+    if [[ "${name}" == "${ex}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+mk_fixtures_layout() {
+  echo ">> reset fixtures dir: ${FIXTURES_DIR}"
+  rm -rf "${FIXTURES_DIR}"
+
+  mkdir -p "${FIXTURES_DIR}/ethereum/ibc0/abis"
+  mkdir -p "${FIXTURES_DIR}/ethereum/ibc0/addresses"
+  mkdir -p "${FIXTURES_DIR}/ethereum/ibc1/abis"
+  mkdir -p "${FIXTURES_DIR}/ethereum/ibc1/addresses"
+}
+
+# out/**/<Contract>.json から .abi だけ抜き出して <Contract>.json として保存
+extract_all_abis() {
+  local dst_dir="$1" # abis ディレクトリ (ibc0 or ibc1)
+
+  echo ">> extracting ABIs into ${dst_dir}"
+  mkdir -p "${dst_dir}"
+
+  # out/*/*.json を全部なめる（metadata.json などもあるので .abi があるものだけ対象）
+  find "${OUT_DIR}" -maxdepth 2 -type f -name '*.json' | while read -r artifact; do
+    # .abi があれば対象
+    if ! jq 'has("abi")' "${artifact}" >/dev/null 2>&1; then
+      continue
+    fi
+
+    # contractName か、なければファイル名ベース
+    local name
+    name="$(jq -r '.contractName // empty' "${artifact}")"
+    if [[ -z "${name}" || "${name}" == "null" ]]; then
+      name="$(basename "${artifact}" .json)"
+    fi
+
+    # yrly が読めないものはスキップ
+    if in_exclude_list "${name}"; then
+      echo "  - skip ABI for ${name}"
+      continue
+    fi
+
+    jq '.abi' "${artifact}" > "${dst_dir}/${name}.json"
+  done
+}
+
+# broadcast の run-latest.json から
+#   contractName → address を全部取り出して addresses/ に書き出す
+extract_all_addresses() {
+  local broadcast_json="$1"
+  local dst_dir="$2"
+
+  echo ">> extracting addresses from ${broadcast_json} into ${dst_dir}"
+
+  if [[ ! -f "${broadcast_json}" ]]; then
+    echo "!! broadcast json not found: ${broadcast_json}" >&2
+    return 1
+  fi
+
+  mkdir -p "${dst_dir}"
+
+  # contractAddress を持つ transaction を全部拾う
+  # 同じ contractName が複数ある場合は最後を採用
+  jq -r '
+    .transactions[]
+    | select(.contractAddress != null)
+    | "\(.contractName) \(.contractAddress)"
+  ' "${broadcast_json}" | while read -r name addr; do
+    [[ -z "${name}" || -z "${addr}" ]] && continue
+
+    # ABI 側で除外したものは address もスキップしておく
+    if in_exclude_list "${name}"; then
+      echo "  - skip address for ${name}"
+      continue
+    fi
+
+    echo "${addr}" > "${dst_dir}/${name}"
+  done
+}
+
+# addresses/OwnableIBCHandler 又は IBCHandler から IBCHandler address を取る
+resolve_ibc_handler_address() {
+  local addr_dir="$1"
+
+  if [[ -f "${addr_dir}/IBCHandler" ]]; then
+    cat "${addr_dir}/IBCHandler"
+    return 0
+  fi
+
+  if [[ -f "${addr_dir}/OwnableIBCHandler" ]]; then
+    cat "${addr_dir}/OwnableIBCHandler"
+    return 0
+  fi
+
+  echo "!! IBCHandler address file not found in ${addr_dir}" >&2
+  return 1
+}
+
+# ==== 本処理 ===========================================================
+
+mk_fixtures_layout
+
+# ---- ABI: 全チェーン共通で out からまとめて取り出して、それぞれにコピー ----
+
+TMP_ABIS_DIR="${FIXTURES_DIR}/_all_abis_tmp"
+extract_all_abis "${TMP_ABIS_DIR}"
+
+cp -a "${TMP_ABIS_DIR}/." "${FIXTURES_DIR}/ethereum/ibc0/abis/"
+cp -a "${TMP_ABIS_DIR}/." "${FIXTURES_DIR}/ethereum/ibc1/abis/"
+rm -rf "${TMP_ABIS_DIR}"
+
+# ---- addresses: チェーンごとに broadcast から生成 ---------------------
+
+IBC0_ADDR_DIR="${FIXTURES_DIR}/ethereum/ibc0/addresses"
+IBC1_ADDR_DIR="${FIXTURES_DIR}/ethereum/ibc1/addresses"
+
+extract_all_addresses "${BROADCAST0}" "${IBC0_ADDR_DIR}"
+extract_all_addresses "${BROADCAST1}" "${IBC1_ADDR_DIR}"
+
+# ---- config/chains/*.json の生成 --------------------------------------
+
+mkdir -p "${CONF_DIR}/chains"
+
+for id in 0 1; do
+  ADDR_DIR="${FIXTURES_DIR}/ethereum/ibc${id}/addresses"
+
+  IBC_HANDLER_ADDRESS="$(resolve_ibc_handler_address "${ADDR_DIR}")"
+
+  cat "${CONF_DIR}/template/ibc-${id}.template.json" \
+    | jq ".chain.ibc_address |= \"${IBC_HANDLER_ADDRESS}\"" \
+    | jq ".chain.multicall3_address |= null" \
+    > "${CONF_DIR}/chains/ibc-${id}.json"
+done
+
+echo "Done. Fixtures => ${FIXTURES_DIR}, configs => ${CONF_DIR}/chains"

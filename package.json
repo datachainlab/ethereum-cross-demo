@@ -1,0 +1,27 @@
+{
+  "name": "cross-solidity",
+  "version": "0.0.1",
+  "scripts": {
+    "deploy1": "forge script demo/chains/coordinator/scripts/DeployAll.s.sol --rpc-url coordinator --broadcast",
+    "deploy2": "forge script demo/chains/participant/scripts/DeployAll.s.sol --rpc-url participant --broadcast",
+    "compile": "forge build",
+    "postinstall": "husky && forge build",
+    "clean": "rm -rf build",
+    "test": "forge test -vvv",
+    "lint:sol": "solhint -f table --max-warnings 0 'src/**/*.sol' 'test/**/*.sol' 'script/**/*.sol'",
+    "fmt:sol": "forge fmt",
+    "coverage:sol": "forge coverage --report lcov --ir-minimum"
+  },
+  "dependencies": {
+    "@hyperledger-labs/yui-ibc-solidity": "git+https://github.com/hyperledger-labs/yui-ibc-solidity.git#v0.3.40",
+    "@datachainlab/cross-solidity": "git+https://github.com/datachainlab/cross-solidity.git#initializable-erc20transfermodule",
+    "@openzeppelin/contracts": "5.0.1",
+    "ejs": "^3.1.10",
+    "forge-std": "github:foundry-rs/forge-std#v1.11.0"
+  },
+  "devDependencies": {
+    "@foundry-rs/forge": "1.4.1",
+    "husky": "^9.1.7",
+    "solhint": "^6.0.1"
+  }
+}
