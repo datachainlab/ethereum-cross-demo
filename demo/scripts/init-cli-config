@@ -31,7 +31,7 @@ echo "Reading configuration from $DEPLOYMENTS_FILE..."
 # --- 2. deployments.toml から値を抽出 ---
 # アドレス抽出
 ERC20_ADDRESS=$(grep 'my_erc20 =' "$DEPLOYMENTS_FILE" | head -n 1 | awk -F '"' '{print $2}')
-CROSS_MODULE_ADDRESS=$(grep 'mock_client =' "$DEPLOYMENTS_FILE" | head -n 1 | awk -F '"' '{print $2}')
+CROSS_MODULE_ADDRESS=$(grep 'cross_simple_module =' "$DEPLOYMENTS_FILE" | head -n 1 | awk -F '"' '{print $2}')
 MNEMONIC=$(grep 'mnemonic =' "$DEPLOYMENTS_FILE" | head -n 1 | awk -F '"' '{print $2}')
 
 if [ -z "$ERC20_ADDRESS" ] || [ -z "$CROSS_MODULE_ADDRESS" ] || [ -z "$MNEMONIC" ]; then
