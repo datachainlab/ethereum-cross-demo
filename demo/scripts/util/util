@@ -11,9 +11,8 @@ if [ -f "${CUR_DIR}/../erc20-util" ]; then
 fi
 
 # relayer-utilがあれば読み込む
-if [ -f "${CUR_DIR}/relayer-util" ]; then
-    source ${CUR_DIR}/relayer-util
-fi
+
+source ${CUR_DIR}/util/relayer-util
 
 function debugMode() {
   if [ -n "${1+x}" ] && [ "$1" = "--debug" ]; then

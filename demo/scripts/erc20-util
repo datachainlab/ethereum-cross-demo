@@ -59,10 +59,13 @@ fi
 # castを使ってアドレスを動的に導出
 # Platformer (Index 0)
 PLATFORMER_ADDRESS=$(cast wallet address --mnemonic "$MNEMONIC" --mnemonic-index 0)
+PLATFORMER_PRIVATE_KEY=$(cast wallet private-key --mnemonic "$MNEMONIC" --mnemonic-index 0)
 # Alice (Index 1)
 ALICE_ADDRESS=$(cast wallet address --mnemonic "$MNEMONIC" --mnemonic-index 1)
+ALICE_PRIVATE_KEY=$(cast wallet private-key --mnemonic "$MNEMONIC" --mnemonic-index 1)
 # Bob (Index 2)
 BOB_ADDRESS=$(cast wallet address --mnemonic "$MNEMONIC" --mnemonic-index 2)
+BOB_PRIVATE_KEY=$(cast wallet private-key --mnemonic "$MNEMONIC" --mnemonic-index 2)
 
 println "Derived Addresses:"
 println "  Platformer: $PLATFORMER_ADDRESS"

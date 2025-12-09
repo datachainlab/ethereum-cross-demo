@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -29,16 +28,10 @@ import (
 	"github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/cross/contract"
 	besuauthtypes "github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/types"
 	exttypes "github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/types"
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/gogo/protobuf/proto"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -57,6 +50,9 @@ func crossCmd(ctx *config.Context) *cobra.Command {
 		callInfoCrossCmd(ctx),
 		createInitiateTxCmd(ctx),
 		NewSendInitiateTxCmd(ctx),
+		txAuthStateCmd(ctx),
+		extSignTxCmd(ctx),
+		coordinatorStateCmd(ctx),
 	)
 
 	return cmd
@@ -69,7 +65,9 @@ func setupCrossCMD(ctx *config.Context) (cross.CrossCMD, error) {
 		return nil, err
 	}
 
-	token, err := contract.NewCrosssimplemodule(common.HexToAddress(cmdCfg.CrossModuleAddress), conn)
+	crossAddr := common.HexToAddress(cmdCfg.CrossModuleAddress)
+
+	token, err := contract.NewCrosssimplemodule(crossAddr, conn)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +77,215 @@ func setupCrossCMD(ctx *config.Context) (cross.CrossCMD, error) {
 		return nil, err
 	}
 
-	return cross.NewCrossCMDImpl(conn, cmdCfg.ChainID, pvtKey, token), nil
+	return cross.NewCrossCMDImpl(conn, cmdCfg.ChainID, pvtKey, token, crossAddr), nil
+}
+
+func coordinatorStateCmd(ctx *config.Context) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "coordinator-state [tx-id]",
+		Short: "Query the coordinator state of a transaction",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// 1. CrossCMDのセットアップ
+			cc, err := setupCrossCMD(ctx)
+			if err != nil {
+				return err
+			}
+
+			// 2. 引数(TxID)のパース
+			// 0xプレフィックスを除去してデコード
+			txIDStr := strings.TrimPrefix(args[0], "0x")
+			txID, err := hex.DecodeString(txIDStr)
+			if err != nil {
+				return fmt.Errorf("invalid tx-id: must be hex string: %w", err)
+			}
+
+			// 3. リクエストデータの作成
+			// contractパッケージの構造体定義を使用
+			req := contract.QueryCoordinatorStateRequestData{
+				TxId: txID,
+			}
+
+			// 4. 問い合わせ実行 (CrossCMD経由)
+			resp, err := cc.QueryCoordinatorState(cmd.Context(), req)
+			if err != nil {
+				return fmt.Errorf("failed to query coordinator state: %w", err)
+			}
+
+			// 5. 結果表示
+			// Goの[]byteフィールドはJSON標準ではBase64文字列として出力されます。
+			// 値を確認する際は echo "Base64Str" | base64 -d | xxd -p 等でデコードしてください。
+			bz, err := json.MarshalIndent(resp, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal response to json: %w", err)
+			}
+			log.Println(string(bz))
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+func extSignTxCmd(ctx *config.Context) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "ext-sign-tx [tx-id]",
+		Short: "Sign a cross-chain transaction using Extension Auth",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// 1. CrossCMDのセットアップ (接続、Contractインスタンス取得)
+			cc, err := setupCrossCMD(ctx)
+			if err != nil {
+				return err
+			}
+
+			// 2. 引数(TxID)のパース
+			txIDStr := strings.TrimPrefix(args[0], "0x")
+			txIDBytes, err := hex.DecodeString(txIDStr)
+			if err != nil || len(txIDBytes) != 32 {
+				return fmt.Errorf("invalid tx-id: must be 32 bytes hex: %w", err)
+			}
+			var txID [32]byte
+			copy(txID[:], txIDBytes)
+
+			// 3. 署名用鍵の取得 (FlagEthSignKeyから)
+			ethSignKey, err := cmd.Flags().GetString(FlagEthSignKey)
+			if err != nil {
+				return err
+			}
+			// 秘密鍵オブジェクトへ変換 (署名生成に使用)
+			ethPrivKey, err := crypto.HexToECDSA(strings.TrimPrefix(ethSignKey, "0x"))
+			if err != nil {
+				return fmt.Errorf("failed to parse private key: %w", err)
+			}
+			// アドレス取得 (Signer ID用)
+			myAddr := crypto.PubkeyToAddress(ethPrivKey.PublicKey)
+
+			log.Printf("\n=== DEBUG INFO ===\n")
+			log.Printf("Using Private Key: ...%s\n", ethSignKey[len(ethSignKey)-4:]) // 末尾のみ表示
+			log.Printf("Derived Address:   %s\n", myAddr.Hex())
+			log.Printf("Target TxID:       %x\n", txID)
+			log.Printf("==================\n\n")
+
+			// 4. SampleExtensionVerifier 向け署名データの作成
+			// signMSG として TxID を使用
+			signMSG := txID
+
+			// Ethereum Signed Message Hash を計算
+			// Keccak256("\x19Ethereum Signed Message:\n32" + signMSG)
+			msgHash := crypto.Keccak256Hash(
+				[]byte("\x19Ethereum Signed Message:\n32"),
+				signMSG[:],
+			)
+
+			// 署名生成 (65 bytes: R|S|V)
+			signature, err := crypto.Sign(msgHash.Bytes(), ethPrivKey)
+			if err != nil {
+				return fmt.Errorf("failed to sign message: %w", err)
+			}
+			// EIP-155 / Solidity ECDSA 互換のため V を 27/28 に調整
+			if signature[64] < 27 {
+				signature[64] += 27
+			}
+
+			// 5. ABIエンコーディング (bytes signature, bytes32 signMSG)
+			bytesType, _ := abi.NewType("bytes", "", nil)
+			bytes32Type, _ := abi.NewType("bytes32", "", nil)
+			arguments := abi.Arguments{
+				{Type: bytesType},
+				{Type: bytes32Type},
+			}
+
+			packedValue, err := arguments.Pack(signature, signMSG)
+			if err != nil {
+				return fmt.Errorf("failed to abi encode: %w", err)
+			}
+
+			// 6. MsgExtSignTxData の構築
+			// Note: contract.MsgExtSignTxData の定義は bind 生成物に依存しますが、
+			// 一般的な abigen 出力を想定しています。
+			inputMsg := contract.MsgExtSignTxData{
+				TxID: txID[:], // bindingによっては [32]byte か []byte か異なります
+				Signers: []contract.AccountData{
+					{
+						Id: myAddr.Bytes(),
+						AuthType: contract.AuthTypeData{
+							Mode: 3, // AUTH_MODE_EXTENSION
+							Option: contract.GoogleProtobufAnyData{
+								TypeUrl: "/verifier.sample.extension",
+								Value:   packedValue,
+							},
+						},
+					},
+				},
+			}
+
+			// Debug : Log the input message
+			bz, _ := json.MarshalIndent(inputMsg, "", "  ")
+			log.Printf("Submitting ExtSignTx with payload:\n%s", string(bz))
+
+			// 7. トランザクション送信
+			tx, err := cc.ExtSignTx(inputMsg)
+			if err != nil {
+				return fmt.Errorf("failed to execute ExtSignTx: %w", err)
+			}
+
+			log.Printf("ExtSignTx submitted successfully! Tx Hash: %s\n", tx.Hash().Hex())
+			return nil
+		},
+	}
+
+	// 署名用の鍵フラグを追加
+	ethSignKeyFlag(cmd)
+	_ = cmd.MarkFlagRequired(FlagEthSignKey)
+
+	return cmd
+}
+
+func txAuthStateCmd(ctx *config.Context) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "tx-auth-state [tx-id]",
+		Short: "Query the authentication state of a transaction",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cc, err := setupCrossCMD(ctx)
+			if err != nil {
+				return err
+			}
+
+			// 引数(Hex文字列)を []byte に変換
+			txIDStr := strings.TrimPrefix(args[0], "0x")
+			txID, err := hex.DecodeString(txIDStr)
+			if err != nil {
+				return fmt.Errorf("invalid tx-id: %w", err)
+			}
+
+			// リクエスト作成
+			req := contract.QueryTxAuthStateRequestData{
+				TxID: txID,
+			}
+
+			// 問い合わせ実行
+			resp, err := cc.QueryTxAuthState(cmd.Context(), req)
+			if err != nil {
+				return err
+			}
+
+			// 結果表示
+			// Note: []byte型(Idなど)はJSONだとBase64になります。
+			// 必要であればHexに変換する処理を挟んでください。今回はそのまま出します。
+			bz, err := json.MarshalIndent(resp, "", "  ")
+			if err != nil {
+				return err
+			}
+			log.Println(string(bz))
+
+			return nil
+		},
+	}
+
+	return cmd
 }
 
 func createInitiateTxCmd(ctx *config.Context) *cobra.Command {
@@ -194,35 +400,23 @@ func NewSendInitiateTxCmd(ctx *config.Context) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			log.Printf("anvil.SendMsgs.result: tx='%v'", tx.Hash().Hex())
-
-			// --- Debugging: Wait for Receipt and Check Status ---
-			conn, err := cross.Connect(ctx.Config.BlockchainHost)
-			if err != nil {
-				return errors.Wrap(err, "failed to connect to backend for debugging")
-			}
-
+			log.Printf("Transaction submitted: hash='%v'", tx.Hash().Hex())
 			log.Println("Waiting for transaction to be mined...")
-			receipt, err := bind.WaitMined(cmd.Context(), conn, tx)
+
+			// 2. マイニング待ち & イベント取得 (エラー解析も内部で実施)
+			event, err := cc.GetTxInitiatedEvent(cmd.Context(), tx)
 			if err != nil {
-				return errors.Wrap(err, "failed to wait for tx receipt")
-			}
-
-			if receipt.Status == ethtypes.ReceiptStatusFailed {
-				log.Printf("Transaction failed (Status: 0).")
-				log.Printf("Gas Used: %d / Limit: %d", receipt.GasUsed, tx.Gas())
-
-				log.Println("Attempting to fetch revert reason...")
-				reason, callErr := getRevertReason(cmd.Context(), conn, tx, receipt)
-				if callErr != nil {
-					log.Printf("Failed to retrieve revert reason: %v", callErr)
-				} else {
-					log.Printf("Revert Reason/Data: %s", reason)
-				}
-				return fmt.Errorf("transaction failed with revert")
+				return err // 詳細なRevert理由などが含まれています
 			}
 
 			log.Println("Transaction executed successfully!")
+
+			// 3. 結果表示
+			fmt.Printf("\n=== InitiateTx Result ===\n")
+			fmt.Printf("TxID (Hex): 0x%x\n", event.TxID)
+			fmt.Printf("Sender:     %s\n", event.Proposer.Hex())
+			fmt.Printf("=========================\n")
+
 			return nil
 		},
 	}
@@ -235,102 +429,6 @@ func NewSendInitiateTxCmd(ctx *config.Context) *cobra.Command {
 	ethSignKeyFlag(cmd)
 
 	return cmd
-}
-
-// getRevertReason attempts to retrieve the revert reason of a failed transaction
-func getRevertReason(ctx context.Context, conn *ethclient.Client, tx *ethtypes.Transaction, receipt *ethtypes.Receipt) (string, error) {
-	// Reconstruct the message from the transaction
-	from, err := ethtypes.Sender(ethtypes.LatestSignerForChainID(tx.ChainId()), tx)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to recover sender")
-	}
-
-	callMsg := ethereum.CallMsg{
-		From:     from,
-		To:       tx.To(),
-		Gas:      tx.Gas(),
-		GasPrice: tx.GasPrice(),
-		Value:    tx.Value(),
-		Data:     tx.Data(),
-	}
-
-	// CallContract at the block where the tx was included to simulate execution
-	_, err = conn.CallContract(ctx, callMsg, receipt.BlockNumber)
-	if err != nil {
-		// Try to extract data from DataError
-		var dataErr rpc.DataError
-		if errors.As(err, &dataErr) {
-			data := dataErr.ErrorData()
-			if dataStr, ok := data.(string); ok {
-				return parseRevertData(dataStr), nil
-			}
-			return fmt.Sprintf("DataError with unexpected type: %v", data), nil
-		}
-
-		// Some clients return the revert data in the error message string itself
-		// Format usually "execution reverted: 0x..." or just "execution reverted"
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "0x") {
-			// Naive extraction attempt
-			parts := strings.Split(errMsg, "0x")
-			if len(parts) > 1 {
-				// Take the last part which likely contains the hex data
-				hexData := "0x" + parts[len(parts)-1]
-				// Trim any non-hex chars if necessary (though usually it's clean or space separated)
-				hexData = strings.Fields(hexData)[0]
-				return parseRevertData(hexData), nil
-			}
-		}
-
-		return fmt.Sprintf("Error from CallContract: %s", errMsg), nil
-	}
-
-	return "No error returned from CallContract (unexpected for failed tx)", nil
-}
-
-func parseRevertData(dataStr string) string {
-	if !strings.HasPrefix(dataStr, "0x") {
-		return fmt.Sprintf("Raw Data: %s", dataStr)
-	}
-
-	dataBytes, err := hexutil.Decode(dataStr)
-	if err != nil {
-		return fmt.Sprintf("Raw Data (Hex): %s (Decode Error: %v)", dataStr, err)
-	}
-
-	if len(dataBytes) < 4 {
-		return fmt.Sprintf("Raw Data (Too short): %s", dataStr)
-	}
-
-	selector := dataBytes[:4]
-	selectorHex := hex.EncodeToString(selector)
-
-	// Check for standard Error(string) selector: 0x08c379a0
-	if selectorHex == "08c379a0" {
-		var reason string
-		unpacker, _ := abi.NewType("string", "", nil)
-		args := abi.Arguments{{Type: unpacker}}
-		unpacked, err := args.Unpack(dataBytes[4:])
-		if err == nil && len(unpacked) > 0 {
-			reason = unpacked[0].(string)
-			return fmt.Sprintf("Standard Error: %s", reason)
-		}
-	}
-
-	// Check for Panic(uint256) selector: 0x4e487b71
-	if selectorHex == "4e487b71" {
-		var code *big.Int
-		unpacker, _ := abi.NewType("uint256", "", nil)
-		args := abi.Arguments{{Type: unpacker}}
-		unpacked, err := args.Unpack(dataBytes[4:])
-		if err == nil && len(unpacked) > 0 {
-			code = unpacked[0].(*big.Int)
-			return fmt.Sprintf("Panic Code: %s", code.String())
-		}
-	}
-
-	// Custom Error
-	return fmt.Sprintf("Custom Error Selector: 0x%s, Raw Data: %s", selectorHex, dataStr)
 }
 
 func ethSignKeyFlag(cmd *cobra.Command) *cobra.Command {

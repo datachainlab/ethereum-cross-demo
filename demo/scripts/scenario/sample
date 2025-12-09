@@ -4,6 +4,8 @@ set -eu
 
 CUR_DIR=$(cd $(dirname ${BASH_SOURCE:-$0}); pwd)
 
+source $(cd $(dirname ${BASH_SOURCE:-$0}); pwd)/../util/env
+
 # ユーティリティの読み込み
 # util内で erc20-util (アドレス定義など) も読み込まれます
 source ${CUR_DIR}/../util/util
@@ -105,6 +107,7 @@ else
     --signer ${BOB_ADDRESS} \
     --call-info ${call_info_no_prefix} \
     --output-document ${DATA_DIR}/erc20-tx-bob-to-alice.json"
+    printERC20 "${ERC20CLI_PARTICIPANT_BOB} erc20 approve --address 0x2F5703804E29F4252FA9405B8D357220d11b3bd9 --amount 10"
 
     infoln "Contract Transaction saved to: ${DATA_DIR}/erc20-tx-bob-to-alice.json"
 fi
@@ -133,6 +136,7 @@ printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross create-contract-tx \
     --signer ${ALICE_ADDRESS} \
     --call-info ${call_info_alice_no_prefix} \
     --output-document ${DATA_DIR}/erc20-tx-alice-to-bob.json"
+printERC20 "${ERC20CLI_COORDINATOR_ALICE} erc20 approve --address 0x2F5703804E29F4252FA9405B8D357220d11b3bd9 --amount 10"
 
 infoln "Contract Transaction saved to: ${DATA_DIR}/erc20-tx-alice-to-bob.json"
 
@@ -146,6 +150,60 @@ infoln "Send InitiateTx by platformer"
 # Default to Anvil Account 0 if not set: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 PLATFORMER_KEY=${PLATFORMER_PRIVATE_KEY:-"0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}
 
-printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross send-initiate-tx \
+infoln "Send InitiateTx by platformer and extract TX_ID"
+
+# 実行するコマンド文字列を定義
+CMD="${ERC20CLI_COORDINATOR_PLATFORMER} cross send-initiate-tx \
 --initiate-tx=${DATA_DIR}/b2b-tx-1.json \
---eth-sign-key=${PLATFORMER_KEY}"
+--eth-sign-key=${ALICE_PRIVATE_KEY}"
+
+infoln "Executing: $CMD"
+
+# コマンドを実行し、標準出力(STDOUT)を変数OUTPUTに格納
+# ※ログ(STDERR)はそのまま画面に表示されます
+OUTPUT=$(eval $CMD)
+
+# 実行結果ステータスのチェック
+if [ $? -ne 0 ]; then
+    echo "Error: Transaction failed."
+    exit 1
+fi
+
+# grepとawkを使って "TxID (Hex): 0x..." の行からID部分(3列目)を抽出
+# Goの出力形式: "TxID (Hex): 0x123..." -> $1="TxID", $2="(Hex):", $3="0x123..."
+TX_ID=$(echo "$OUTPUT" | grep "TxID (Hex):" | awk '{print $3}')
+
+if [ -z "$TX_ID" ]; then
+    echo "Error: Failed to extract TX_ID from output."
+    echo "Raw Output: $OUTPUT"
+    exit 1
+fi
+
+infoln "Successfully extracted TX_ID: ${TX_ID}"
+
+printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross tx-auth-state $TX_ID"
+
+printERC20 "${ERC20CLI_COORDINATOR_BOB} cross ext-sign-tx ${TX_ID} \
+--eth-sign-key=${BOB_PRIVATE_KEY}"
+
+## sleep
+
+sleep 3
+
+printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross tx-auth-state $TX_ID"
+
+printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross coordinator-state $TX_ID"
+
+infoln "Relay packet and ack"
+for i in {1..5}; do
+  printRelay "${RLY} query unrelayed-packets ${PATH_NAME}"
+  packet=${LATEST_RESULT}
+  printRelay "${RLY} query unrelayed-acknowledgements ${PATH_NAME}"
+  ack=${LATEST_RESULT}
+  if [ "$packet" = '{"src":[],"dst":[]}' ] && [ "$ack" = '{"src":[],"dst":[]}' ]; then
+    break
+  fi
+  sleep 5
+done
+
+printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross coordinator-state $TX_ID"
