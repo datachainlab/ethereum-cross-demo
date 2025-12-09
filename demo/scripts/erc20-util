@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+
+set -eu
+
+# demo/scripts に配置されることを想定
+CUR_DIR=$(cd $(dirname ${BASH_SOURCE:-$0}); pwd)
+# プロジェクトルート (cli, demo, buildがあるディレクトリ) へのパス
+ROOT_DIR=$(cd ${CUR_DIR}/../..; pwd)
+
+# colorスクリプトがあれば読み込む（リファレンス準拠）
+if [ -f "${CUR_DIR}/util/color" ]; then
+    source ${CUR_DIR}/util/color
+else
+    # colorがない場合のフォールバック定義
+    function println() {
+        echo "$1"
+    }
+fi
+
+ERC20CLI_CONFIG_DIR=${ROOT_DIR}/demo/.erc20cli
+ERC20CLI_BINARY=${ROOT_DIR}/build/erc20cli
+
+# バイナリの存在確認
+if [ ! -f "$ERC20CLI_BINARY" ]; then
+    echo "Warning: erc20cli binary not found at $ERC20CLI_BINARY"
+    echo "Please build it first: go build -o build/erc20cli ./cli"
+fi
+
+# --- Command Aliases ---
+
+# Coordinator Chain (31337)
+ERC20CLI_COORDINATOR_PLATFORMER="${ERC20CLI_BINARY} --config ${ERC20CLI_CONFIG_DIR}/coordinator/platformer.yaml"
+ERC20CLI_COORDINATOR_ALICE="${ERC20CLI_BINARY} --config ${ERC20CLI_CONFIG_DIR}/coordinator/alice.yaml"
+ERC20CLI_COORDINATOR_BOB="${ERC20CLI_BINARY} --config ${ERC20CLI_CONFIG_DIR}/coordinator/bob.yaml"
+
+# Participant Chain (31338)
+ERC20CLI_PARTICIPANT_PLATFORMER="${ERC20CLI_BINARY} --config ${ERC20CLI_CONFIG_DIR}/participant/platformer.yaml"
+ERC20CLI_PARTICIPANT_ALICE="${ERC20CLI_BINARY} --config ${ERC20CLI_CONFIG_DIR}/participant/alice.yaml"
+ERC20CLI_PARTICIPANT_BOB="${ERC20CLI_BINARY} --config ${ERC20CLI_CONFIG_DIR}/participant/bob.yaml"
+
+println "--- ERC20 CLI Aliases Configured ---"
+println "Config Dir: ${ERC20CLI_CONFIG_DIR}"
+
+# --- User Constants ---
+
+PLATFORMER="platformer"
+ALICE="alice"
+BOB="bob"
+
+# ニーモニック定義 (docker-compose.yamlと共通)
+MNEMONIC="math razor capable expose worth grape metal sunset metal sudden usage scheme"
+
+# castコマンドの存在確認
+if ! command -v cast &> /dev/null; then
+    println "Error: 'cast' command not found. Please install Foundry (forge/cast) to derive addresses."
+    exit 1
+fi
+
+# castを使ってアドレスを動的に導出
+# Platformer (Index 0)
+PLATFORMER_ADDRESS=$(cast wallet address --mnemonic "$MNEMONIC" --mnemonic-index 0)
+# Alice (Index 1)
+ALICE_ADDRESS=$(cast wallet address --mnemonic "$MNEMONIC" --mnemonic-index 1)
+# Bob (Index 2)
+BOB_ADDRESS=$(cast wallet address --mnemonic "$MNEMONIC" --mnemonic-index 2)
+
+println "Derived Addresses:"
+println "  Platformer: $PLATFORMER_ADDRESS"
+println "  Alice:      $ALICE_ADDRESS"
+println "  Bob:        $BOB_ADDRESS"
+
+# --- Helper Functions ---
+
+function extractHead() {
+  array=$1
+  array=${array#"["}
+  array=${array%"]"}
+  array=(${array})
+  head=${array[0]}
+  echo "${head}"
+}
+
+function printTx() {
+  tx=$1
+  println "tx hash: $tx"
+}
+
+# ユーティリティ: 指定されたユーザーとチェーンでBalanceを確認する
+# Usage: checkBalance "coordinator" "alice" $ALICE_ADDRESS
+function checkBalance() {
+    local chain=$1
+    local user=$2
+    local address=$3
+    local cmd_var="ERC20CLI_${chain^^}_${user^^}" # 変数名動的生成 (例: ERC20CLI_COORDINATOR_ALICE)
+    local cmd=${!cmd_var}
+
+    echo "Checking balance for ${user} on ${chain}..."
+    $cmd balanceOf --address ${address}
+}

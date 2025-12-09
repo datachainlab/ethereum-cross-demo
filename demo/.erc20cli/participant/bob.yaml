@@ -1,0 +1,6 @@
+blockchain-host: ws://127.0.0.1:8546
+chain-id: 31338
+cross-module-address: 0x173FFadd93aefC4F6e2D9bB20825E68A736DE047
+erc20-token-address: 0xff77D90D6aA12db33d3Ba50A34fB25401f6e4c4F
+wallet-file: ./.erc20cli/participant/wallet/bob
+watch-timeout-sec: 10

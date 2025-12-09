@@ -1,0 +1,6 @@
+blockchain-host:
+chain-id: 2018
+cross-module-address: 0x173FFadd93aefC4F6e2D9bB20825E68A736DE047
+erc721-token-address: 0xdD5109D05Ac357E446992a60E64764041A0E8529
+wallet-file: ./.erc721cli/wallet
+watch-timeout-sec: 10

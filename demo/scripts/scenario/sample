@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+
+set -eu
+
+CUR_DIR=$(cd $(dirname ${BASH_SOURCE:-$0}); pwd)
+
+# ユーティリティの読み込み
+# util内で erc20-util (アドレス定義など) も読み込まれます
+source ${CUR_DIR}/../util/util
+
+# colorスクリプトの読み込み (infoln用)
+if [ -f "${CUR_DIR}/../util/color" ]; then
+    source ${CUR_DIR}/../util/color
+else
+    # フォールバック
+    function infoln() {
+        echo "[INFO] $1"
+    }
+fi
+
+debugMode ${1+x}
+
+# Mintする量
+AMOUNT=1000
+
+infoln "###########################################"
+infoln "###      ERC20 Fixture Setup            ###"
+infoln "###########################################"
+
+# --- Coordinator Chain (31337) ---
+infoln "=== Setting up Coordinator Chain (31337) ==="
+
+# Mint to Alice
+infoln "Minting ${AMOUNT} tokens to Alice on Coordinator..."
+printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} erc20 mint --address ${ALICE_ADDRESS} --amount ${AMOUNT}"
+
+# Mint to Bob
+infoln "Minting ${AMOUNT} tokens to Bob on Coordinator..."
+printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} erc20 mint --address ${BOB_ADDRESS} --amount ${AMOUNT}"
+
+# Check Balances (Wait a bit for block inclusion if necessary, generally anvil is instant)
+sleep 2
+
+infoln "Checking Alice's balance on Coordinator..."
+printERC20 "${ERC20CLI_COORDINATOR_ALICE} erc20 balanceOf --address ${ALICE_ADDRESS}"
+
+infoln "Checking Bob's balance on Coordinator..."
+printERC20 "${ERC20CLI_COORDINATOR_BOB} erc20 balanceOf --address ${BOB_ADDRESS}"
+
+
+# --- Participant Chain (31338) ---
+infoln "=== Setting up Participant Chain (31338) ==="
+
+# Mint to Alice
+infoln "Minting ${AMOUNT} tokens to Alice on Participant..."
+printERC20 "${ERC20CLI_PARTICIPANT_PLATFORMER} erc20 mint --address ${ALICE_ADDRESS} --amount ${AMOUNT}"
+
+# Mint to Bob
+infoln "Minting ${AMOUNT} tokens to Bob on Participant..."
+printERC20 "${ERC20CLI_PARTICIPANT_PLATFORMER} erc20 mint --address ${BOB_ADDRESS} --amount ${AMOUNT}"
+
+sleep 2
+
+# Check Balances
+infoln "Checking Alice's balance on Participant..."
+printERC20 "${ERC20CLI_PARTICIPANT_ALICE} erc20 balanceOf --address ${ALICE_ADDRESS}"
+
+infoln "Checking Bob's balance on Participant..."
+printERC20 "${ERC20CLI_PARTICIPANT_BOB} erc20 balanceOf --address ${BOB_ADDRESS}"
+
+infoln "Fixture setup completed successfully."
+
+# ==============================================================================
+# Cross-Chain Transaction Preparation (Bob -> Alice)
+# ==============================================================================
+
+infoln "###########################################"
+infoln "###   Creating Contract Transaction     ###"
+infoln "###########################################"
+
+DATA_DIR="${CUR_DIR}/../../data"
+mkdir -p "${DATA_DIR}"
+
+chan="channel-0:cross-coordinator"
+
+if [ -z "$chan" ] || [ "$chan" == "[]" ]; then
+    infoln "Warning: No IBC channel found. Skipping contract-tx creation. Please run handshake first."
+else
+    infoln "Using Channel: ${chan}"
+
+    # Generate Call Info
+    # Solidity: decodeCallInfo expects (address from, address to, uint256 amount)
+    # We use cast abi-encode to generate exactly 96 bytes (32 bytes * 3) without function selector.
+    # Scenario: Bob (From) -> Alice (To) sending 10 tokens
+    infoln "Generating Call Info for transfer: Bob -> Alice (Amount: 10)"
+    
+    call_info=$(cast abi-encode "f(address,address,uint256)" "${BOB_ADDRESS}" "${ALICE_ADDRESS}" "10")
+    call_info_no_prefix=${call_info#0x}
+    infoln "Call Info (Hex): ${call_info_no_prefix}"
+
+    # Create Contract Transaction
+    # Signer is Bob (the sender on Coordinator chain)
+    printERC20 "${ERC20CLI_PARTICIPANT_PLATFORMER} cross create-contract-tx \
+    --initiator-chain-channel ${chan} \
+    --signer ${BOB_ADDRESS} \
+    --call-info ${call_info_no_prefix} \
+    --output-document ${DATA_DIR}/erc20-tx-bob-to-alice.json"
+
+    infoln "Contract Transaction saved to: ${DATA_DIR}/erc20-tx-bob-to-alice.json"
+fi
+
+# ==============================================================================
+# Cross-Chain Transaction Preparation (Alice -> Bob, channel/port empty)
+# ==============================================================================
+
+infoln "###########################################"
+infoln "### Creating Contract Tx (Alice -> Bob) ###"
+infoln "###########################################"
+
+chan_empty=":"
+
+infoln "Using Empty ChannelInfo: ${chan_empty}"
+
+# Scenario: Alice (From) -> Bob (To) sending 10 tokens
+infoln "Generating Call Info for transfer: Alice -> Bob (Amount: 10)"
+
+call_info_alice=$(cast abi-encode "f(address,address,uint256)" "${ALICE_ADDRESS}" "${BOB_ADDRESS}" "10")
+call_info_alice_no_prefix=${call_info_alice#0x}
+infoln "Call Info (Hex): ${call_info_alice_no_prefix}"
+
+printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross create-contract-tx \
+    --initiator-chain-channel ${chan_empty} \
+    --signer ${ALICE_ADDRESS} \
+    --call-info ${call_info_alice_no_prefix} \
+    --output-document ${DATA_DIR}/erc20-tx-alice-to-bob.json"
+
+infoln "Contract Transaction saved to: ${DATA_DIR}/erc20-tx-alice-to-bob.json"
+
+infoln "Create a cross InitiateTx by platformer"
+printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross create-initiate-tx \
+--contract-txs=${DATA_DIR}/erc20-tx-alice-to-bob.json,${DATA_DIR}/erc20-tx-bob-to-alice.json \
+--output-document=${DATA_DIR}/b2b-tx-1.json"

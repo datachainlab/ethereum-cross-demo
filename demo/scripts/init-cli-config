@@ -1,0 +1,114 @@
+#!/bin/bash
+
+# ==========================================
+# CLI設定ファイル生成スクリプト
+# deployments.toml から設定を読み込み、
+# .erc20cli ディレクトリに設定ファイルを生成します。
+# ==========================================
+
+# スクリプト実行時の出力先ディレクトリ (demo/scripts からの相対)
+BASE_DIR="../.erc20cli"
+# 生成されるYAMLファイル内に記述するパス (CLI実行時のカレントディレクトリからの相対)
+# ここでは demo ディレクトリ直下に .erc20cli がある前提で、demoディレクトリ等から実行する場合を想定
+CONFIG_DIR_PREFIX="./.erc20cli"
+
+DEPLOYMENTS_FILE="../../deployments.toml"
+
+# --- 1. 依存ツールの確認 ---
+if ! command -v cast &> /dev/null; then
+    echo "Error: 'cast' command not found. Please install Foundry (forge/cast)."
+    exit 1
+fi
+
+if [ ! -f "$DEPLOYMENTS_FILE" ]; then
+    echo "Error: $DEPLOYMENTS_FILE not found."
+    # demo/scripts から実行されていない場合のフォールバックなどを検討する場合はここに追記
+    exit 1
+fi
+
+echo "Reading configuration from $DEPLOYMENTS_FILE..."
+
+# --- 2. deployments.toml から値を抽出 ---
+# アドレス抽出
+ERC20_ADDRESS=$(grep 'my_erc20 =' "$DEPLOYMENTS_FILE" | head -n 1 | awk -F '"' '{print $2}')
+CROSS_MODULE_ADDRESS=$(grep 'mock_client =' "$DEPLOYMENTS_FILE" | head -n 1 | awk -F '"' '{print $2}')
+MNEMONIC=$(grep 'mnemonic =' "$DEPLOYMENTS_FILE" | head -n 1 | awk -F '"' '{print $2}')
+
+if [ -z "$ERC20_ADDRESS" ] || [ -z "$CROSS_MODULE_ADDRESS" ] || [ -z "$MNEMONIC" ]; then
+    echo "Error: Failed to parse necessary values from $DEPLOYMENTS_FILE"
+    exit 1
+fi
+
+echo "  ERC20 Address: $ERC20_ADDRESS"
+echo "  Cross Module : $CROSS_MODULE_ADDRESS"
+echo "  Mnemonic     : ${MNEMONIC:0:15}..."
+
+# --- 3. 秘密鍵の準備 ---
+derive_key() {
+    local index=$1
+    local key
+    key=$(cast wallet private-key --mnemonic "$MNEMONIC" --mnemonic-index "$index")
+    echo "${key#0x}"
+}
+
+echo "Deriving private keys from mnemonic..."
+PLATFORMER_PVT_KEY=$(derive_key 0)
+ALICE_PVT_KEY=$(derive_key 1)
+BOB_PVT_KEY=$(derive_key 2)
+
+# --- 4. 生成ロジック ---
+
+# ディレクトリ作成関数
+setup_chain_dir() {
+    local chain_name=$1
+    mkdir -p "${BASE_DIR}/${chain_name}/wallet"
+}
+
+# 設定ファイル生成関数
+generate_config() {
+    local chain_name=$1
+    local user_name=$2
+    local pvt_key=$3
+    local host=$4
+    local chain_id=$5
+
+    # 実際のファイルパス (書き込み用)
+    local wallet_rel_path="${chain_name}/wallet/${user_name}"
+    local wallet_file_path="${BASE_DIR}/${wallet_rel_path}"
+    local config_file_path="${BASE_DIR}/${chain_name}/${user_name}.yaml"
+
+    # YAML内に記述するパス (読み込み用)
+    local yaml_wallet_path="${CONFIG_DIR_PREFIX}/${wallet_rel_path}"
+
+    # Walletファイル作成 (秘密鍵保存)
+    echo "${pvt_key}" > "${wallet_file_path}"
+
+    # YAMLファイル作成
+    # wallet-file には yaml_wallet_path を使用する
+    cat <<EOF > "${config_file_path}"
+blockchain-host: ${host}
+chain-id: ${chain_id}
+cross-module-address: ${CROSS_MODULE_ADDRESS}
+erc20-token-address: ${ERC20_ADDRESS}
+wallet-file: ${yaml_wallet_path}
+watch-timeout-sec: 10
+EOF
+
+    echo "  Generated: ${config_file_path}"
+}
+
+# --- Coordinator Chain (Chain ID: 31337, Port: 8545) ---
+echo "Setting up Coordinator (31337)..."
+setup_chain_dir "coordinator"
+generate_config "coordinator" "platformer" "${PLATFORMER_PVT_KEY}" "ws://127.0.0.1:8545" 31337
+generate_config "coordinator" "alice" "${ALICE_PVT_KEY}" "ws://127.0.0.1:8545" 31337
+generate_config "coordinator" "bob" "${BOB_PVT_KEY}" "ws://127.0.0.1:8545" 31337
+
+# --- Participant Chain (Chain ID: 31338, Port: 8546) ---
+echo "Setting up Participant (31338)..."
+setup_chain_dir "participant"
+generate_config "participant" "platformer" "${PLATFORMER_PVT_KEY}" "ws://127.0.0.1:8546" 31338
+generate_config "participant" "alice" "${ALICE_PVT_KEY}" "ws://127.0.0.1:8546" 31338
+generate_config "participant" "bob" "${BOB_PVT_KEY}" "ws://127.0.0.1:8546" 31338
+
+echo "Done! Configuration created in ${BASE_DIR}"

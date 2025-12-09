@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+
+set -eu
+
+CUR_DIR=$(cd $(dirname ${BASH_SOURCE:-$0}); pwd)
+
+# 依存ユーティリティの読み込み
+# erc20-util内で color も読み込まれます
+if [ -f "${CUR_DIR}/../erc20-util" ]; then
+    source ${CUR_DIR}/../erc20-util
+fi
+
+# relayer-utilがあれば読み込む
+if [ -f "${CUR_DIR}/relayer-util" ]; then
+    source ${CUR_DIR}/relayer-util
+fi
+
+function debugMode() {
+  if [ -n "${1+x}" ] && [ "$1" = "--debug" ]; then
+    set -x
+  fi
+}
+
+LATEST_RESULT=""
+
+function print() {
+  local cmd=$1
+  local display=$2
+
+  # ログ出力: コマンドラインのバイナリパスを見やすい名前に置換して表示
+  echo "[$(date "+%Y/%m/%d %H:%M:%S")] $cmd" | awk \
+  -v binary="${ERC20CLI_BINARY}" \
+  -v disp="$display" \
+  '{ sub(binary, disp); print $0}'
+
+  local res
+  local status=0
+  
+  # コマンド実行 (エラー時も続行してステータスを取得)
+  res="$($cmd)" || status=$?
+  
+  # 結果の最後の行を保持 (TxIDなどの取得用)
+  LATEST_RESULT=${res##*$'\n'}
+  
+  if test $status -eq 0; then
+    # 成功時: 結果の最終行を緑色で表示 (successlnはcolorで定義されている前提)
+    if command -v successln &> /dev/null; then
+        successln "${res##*$'\n'}"
+    else
+        echo "${res##*$'\n'}"
+    fi
+  else
+    # 失敗時: 全出力を赤色で表示
+    if command -v errorln &> /dev/null; then
+        errorln "${res}"
+    else
+        echo "Error: ${res}"
+    fi
+  fi
+  return $status
+}
+
+function printERC20() {
+  print "$1" erc20cli
+}
+
+function printRelay() {
+  print "$1" rly
+}
+
+function isCommit() {
+  if [[ $1 == *"COORDINATOR_DECISION_COMMIT"* ]]; then
+    successln "SUCCESS: Tx $2 is committed"
+  else
+    errorln "FAIL: Tx $2 is not committed"
+    return 1
+  fi
+}
+
+function isAbort() {
+  if [[ $1 == *"COORDINATOR_DECISION_ABORT"* ]]; then
+    successln "SUCCESS: Tx $2 is aborted"
+  else
+    errorln "FAIL: Tx $2 is not aborted"
+    return 1
+  fi
+}
+
+function assertEqual() {
+  local actual=$1
+  local expected=$2
+  local message=$3
+  if [ "$1" = "$2" ]; then
+    successln "SUCCESS: $3"
+  else
+    errorln "FAIL: expected $2 but actual $1"
+    return 1
+  fi
+}
+
+function waitSuccess() {
+  local cmd=$1
+  local try_count=$2
+  local res
+  local status=0
+  set +e
+  for i in $(seq $try_count); do
+    res="$($cmd 2>&1)"
+    status=$?
+    if [ $status -eq 0 ]; then
+      set -e
+      successln "Event detected: ${res##*$'\n'}"
+      break
+    fi
+    sleep 5
+  done
+  set -e
+  return $status
+}
