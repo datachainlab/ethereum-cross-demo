@@ -10,7 +10,7 @@
 BASE_DIR="../.erc20cli"
 # 生成されるYAMLファイル内に記述するパス (CLI実行時のカレントディレクトリからの相対)
 # ここでは demo ディレクトリ直下に .erc20cli がある前提で、demoディレクトリ等から実行する場合を想定
-CONFIG_DIR_PREFIX="./.erc20cli"
+CONFIG_DIR_PREFIX="../.erc20cli"
 
 DEPLOYMENTS_FILE="../../deployments.toml"
 

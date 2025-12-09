@@ -206,4 +206,6 @@ for i in {1..5}; do
   sleep 5
 done
 
+sleep 3
+
 printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross coordinator-state $TX_ID"

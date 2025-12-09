@@ -2,5 +2,5 @@ blockchain-host: ws://127.0.0.1:8545
 chain-id: 31337
 cross-module-address: 0x37978908bac82F0191b674235A0fEEE31e7524a4
 erc20-token-address: 0xff77D90D6aA12db33d3Ba50A34fB25401f6e4c4F
-wallet-file: ./.erc20cli/coordinator/wallet/alice
+wallet-file: ../.erc20cli/coordinator/wallet/alice
 watch-timeout-sec: 10
