@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"io/ioutil"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	clienttypes "github.com/cosmos/ibc-go/modules/core/02-client/types"
@@ -26,13 +29,19 @@ import (
 	"github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/cross/contract"
 	besuauthtypes "github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/types"
 	exttypes "github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/types"
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/gogo/protobuf/proto"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 func crossCmd(ctx *config.Context) *cobra.Command {
@@ -47,6 +56,7 @@ func crossCmd(ctx *config.Context) *cobra.Command {
 		createContractTransactionCrossCmd(ctx),
 		callInfoCrossCmd(ctx),
 		createInitiateTxCmd(ctx),
+		NewSendInitiateTxCmd(ctx),
 	)
 
 	return cmd
@@ -144,16 +154,24 @@ func NewSendInitiateTxCmd(ctx *config.Context) *cobra.Command {
 		Short: "Send a NewMsgInitiateTx transaction for a simple commit",
 		Args:  cobra.ExactArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := ctx.Chain.Connect(); err != nil {
-				return err
-			}
-
-			msg, err := readInitiateTx(ctx.Codec, viper.GetString(flagInitiateTx))
+			cc, err := setupCrossCMD(ctx)
 			if err != nil {
 				return err
 			}
 
-			ethSignKey := viper.GetString(FlagEthSignKey)
+			txPath, err := cmd.Flags().GetString(flagInitiateTx)
+			if err != nil {
+				return err
+			}
+			msg, err := readInitiateTx(ctx.Codec, txPath)
+			if err != nil {
+				return err
+			}
+
+			ethSignKey, err := cmd.Flags().GetString(FlagEthSignKey)
+			if err != nil {
+				return err
+			}
 			signer, err := getSigner(ctx, ethSignKey)
 			if err != nil {
 				return err
@@ -164,23 +182,47 @@ func NewSendInitiateTxCmd(ctx *config.Context) *cobra.Command {
 				return err
 			}
 
-			var res []byte
-			if privKey, err := hexToSecp256k1PrivKey(ethSignKey); err != nil {
+			// Convert types.MsgInitiateTx to contract.MsgInitiateTxData
+			contractMsg := toContractMsgInitiateTxData(msg)
+
+			// Debug: Log the contract message data
+			bz, _ := json.MarshalIndent(contractMsg, "", "  ")
+			log.Printf("Submitting InitiateTx with payload:\n%s", string(bz))
+
+			// Submit the transaction to the contract via CrossCMD
+			tx, err := cc.InitiateTx(contractMsg)
+			if err != nil {
 				return err
-			} else if txBytes, err := buildTx(ctx.Codec.InterfaceRegistry(), privKey, msg); err != nil {
-				return err
-			} else {
-				res, err = ctx.Chain.Contract().SubmitTransaction("handleTx", string(txBytes))
-				if err != nil {
-					return err
+			}
+			log.Printf("anvil.SendMsgs.result: tx='%v'", tx.Hash().Hex())
+
+			// --- Debugging: Wait for Receipt and Check Status ---
+			conn, err := cross.Connect(ctx.Config.BlockchainHost)
+			if err != nil {
+				return errors.Wrap(err, "failed to connect to backend for debugging")
+			}
+
+			log.Println("Waiting for transaction to be mined...")
+			receipt, err := bind.WaitMined(cmd.Context(), conn, tx)
+			if err != nil {
+				return errors.Wrap(err, "failed to wait for tx receipt")
+			}
+
+			if receipt.Status == ethtypes.ReceiptStatusFailed {
+				log.Printf("Transaction failed (Status: 0).")
+				log.Printf("Gas Used: %d / Limit: %d", receipt.GasUsed, tx.Gas())
+
+				log.Println("Attempting to fetch revert reason...")
+				reason, callErr := getRevertReason(cmd.Context(), conn, tx, receipt)
+				if callErr != nil {
+					log.Printf("Failed to retrieve revert reason: %v", callErr)
+				} else {
+					log.Printf("Revert Reason/Data: %s", reason)
 				}
-				log.Printf("fabric.SendMsgs.result: res='%v' err='%v'", res, err)
+				return fmt.Errorf("transaction failed with revert")
 			}
 
-			if err := ctx.Chain.OutputTxIDFromEvent(res); err != nil {
-				return err
-			}
-
+			log.Println("Transaction executed successfully!")
 			return nil
 		},
 	}
@@ -193,6 +235,102 @@ func NewSendInitiateTxCmd(ctx *config.Context) *cobra.Command {
 	ethSignKeyFlag(cmd)
 
 	return cmd
+}
+
+// getRevertReason attempts to retrieve the revert reason of a failed transaction
+func getRevertReason(ctx context.Context, conn *ethclient.Client, tx *ethtypes.Transaction, receipt *ethtypes.Receipt) (string, error) {
+	// Reconstruct the message from the transaction
+	from, err := ethtypes.Sender(ethtypes.LatestSignerForChainID(tx.ChainId()), tx)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to recover sender")
+	}
+
+	callMsg := ethereum.CallMsg{
+		From:     from,
+		To:       tx.To(),
+		Gas:      tx.Gas(),
+		GasPrice: tx.GasPrice(),
+		Value:    tx.Value(),
+		Data:     tx.Data(),
+	}
+
+	// CallContract at the block where the tx was included to simulate execution
+	_, err = conn.CallContract(ctx, callMsg, receipt.BlockNumber)
+	if err != nil {
+		// Try to extract data from DataError
+		var dataErr rpc.DataError
+		if errors.As(err, &dataErr) {
+			data := dataErr.ErrorData()
+			if dataStr, ok := data.(string); ok {
+				return parseRevertData(dataStr), nil
+			}
+			return fmt.Sprintf("DataError with unexpected type: %v", data), nil
+		}
+
+		// Some clients return the revert data in the error message string itself
+		// Format usually "execution reverted: 0x..." or just "execution reverted"
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "0x") {
+			// Naive extraction attempt
+			parts := strings.Split(errMsg, "0x")
+			if len(parts) > 1 {
+				// Take the last part which likely contains the hex data
+				hexData := "0x" + parts[len(parts)-1]
+				// Trim any non-hex chars if necessary (though usually it's clean or space separated)
+				hexData = strings.Fields(hexData)[0]
+				return parseRevertData(hexData), nil
+			}
+		}
+
+		return fmt.Sprintf("Error from CallContract: %s", errMsg), nil
+	}
+
+	return "No error returned from CallContract (unexpected for failed tx)", nil
+}
+
+func parseRevertData(dataStr string) string {
+	if !strings.HasPrefix(dataStr, "0x") {
+		return fmt.Sprintf("Raw Data: %s", dataStr)
+	}
+
+	dataBytes, err := hexutil.Decode(dataStr)
+	if err != nil {
+		return fmt.Sprintf("Raw Data (Hex): %s (Decode Error: %v)", dataStr, err)
+	}
+
+	if len(dataBytes) < 4 {
+		return fmt.Sprintf("Raw Data (Too short): %s", dataStr)
+	}
+
+	selector := dataBytes[:4]
+	selectorHex := hex.EncodeToString(selector)
+
+	// Check for standard Error(string) selector: 0x08c379a0
+	if selectorHex == "08c379a0" {
+		var reason string
+		unpacker, _ := abi.NewType("string", "", nil)
+		args := abi.Arguments{{Type: unpacker}}
+		unpacked, err := args.Unpack(dataBytes[4:])
+		if err == nil && len(unpacked) > 0 {
+			reason = unpacked[0].(string)
+			return fmt.Sprintf("Standard Error: %s", reason)
+		}
+	}
+
+	// Check for Panic(uint256) selector: 0x4e487b71
+	if selectorHex == "4e487b71" {
+		var code *big.Int
+		unpacker, _ := abi.NewType("uint256", "", nil)
+		args := abi.Arguments{{Type: unpacker}}
+		unpacked, err := args.Unpack(dataBytes[4:])
+		if err == nil && len(unpacked) > 0 {
+			code = unpacked[0].(*big.Int)
+			return fmt.Sprintf("Panic Code: %s", code.String())
+		}
+	}
+
+	// Custom Error
+	return fmt.Sprintf("Custom Error Selector: 0x%s, Raw Data: %s", selectorHex, dataStr)
 }
 
 func ethSignKeyFlag(cmd *cobra.Command) *cobra.Command {
@@ -227,6 +365,7 @@ func getSigner(ctx *config.Context, ethSignKey string) (authtypes.Account, error
 }
 
 func hexToEthereumAddress(hexString string) ([]byte, error) {
+	hexString = strings.TrimPrefix(hexString, "0x")
 	if privKey, err := crypto.HexToECDSA(hexString); err != nil {
 		return nil, err
 	} else {
@@ -235,6 +374,7 @@ func hexToEthereumAddress(hexString string) ([]byte, error) {
 }
 
 func hexToSecp256k1PrivKey(hexString string) (*secp256k1.PrivKey, error) {
+	hexString = strings.TrimPrefix(hexString, "0x")
 	bz, err := hex.DecodeString(hexString)
 	if err != nil {
 		return nil, err
@@ -478,5 +618,63 @@ func toArg(raw string, types string) (interface{}, error) {
 		return i, nil
 	default:
 		return nil, errors.New("invalid args")
+	}
+}
+
+func toContractAny(a *codectypes.Any) contract.GoogleProtobufAnyData {
+	if a == nil {
+		return contract.GoogleProtobufAnyData{}
+	}
+	return contract.GoogleProtobufAnyData{
+		TypeUrl: a.TypeUrl,
+		Value:   a.Value,
+	}
+}
+
+func toContractMsgInitiateTxData(msg *types.MsgInitiateTx) contract.MsgInitiateTxData {
+	// 1. Convert Signers
+	var contractSigners []contract.AccountData
+	for _, s := range msg.Signers {
+		contractSigners = append(contractSigners, contract.AccountData{
+			Id: s.Id,
+			AuthType: contract.AuthTypeData{
+				Mode:   uint8(s.AuthType.Mode),
+				Option: toContractAny(s.AuthType.Option),
+			},
+		})
+	}
+
+	// 2. Convert ContractTransactions
+	var contractTxs []contract.ContractTransactionData
+	for _, ctx := range msg.ContractTransactions {
+		var ctxSigners []contract.AccountData
+		for _, s := range ctx.Signers {
+			ctxSigners = append(ctxSigners, contract.AccountData{
+				Id: s.Id,
+				AuthType: contract.AuthTypeData{
+					Mode:   uint8(s.AuthType.Mode),
+					Option: toContractAny(s.AuthType.Option),
+				},
+			})
+		}
+		contractTxs = append(contractTxs, contract.ContractTransactionData{
+			CrossChainChannel: toContractAny(ctx.CrossChainChannel),
+			Signers:           ctxSigners,
+			CallInfo:          ctx.CallInfo,
+		})
+	}
+
+	// 3. Create contract message struct
+	return contract.MsgInitiateTxData{
+		ChainId:              msg.ChainId,
+		Nonce:                msg.Nonce,
+		CommitProtocol:       uint8(msg.CommitProtocol),
+		ContractTransactions: contractTxs,
+		Signers:              contractSigners,
+		TimeoutHeight: contract.IbcCoreClientV1HeightData{
+			RevisionNumber: msg.TimeoutHeight.RevisionNumber,
+			RevisionHeight: msg.TimeoutHeight.RevisionHeight,
+		},
+		TimeoutTimestamp: msg.TimeoutTimestamp,
 	}
 }

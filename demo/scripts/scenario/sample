@@ -140,3 +140,12 @@ infoln "Create a cross InitiateTx by platformer"
 printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross create-initiate-tx \
 --contract-txs=${DATA_DIR}/erc20-tx-alice-to-bob.json,${DATA_DIR}/erc20-tx-bob-to-alice.json \
 --output-document=${DATA_DIR}/b2b-tx-1.json"
+
+infoln "Send InitiateTx by platformer"
+# PLATFORMER_PRIVATE_KEY should be defined in util or environment.
+# Default to Anvil Account 0 if not set: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+PLATFORMER_KEY=${PLATFORMER_PRIVATE_KEY:-"0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}
+
+printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross send-initiate-tx \
+--initiate-tx=${DATA_DIR}/b2b-tx-1.json \
+--eth-sign-key=${PLATFORMER_KEY}"
