@@ -6,7 +6,6 @@ set -eu
 CUR_DIR=$(cd $(dirname ${BASH_SOURCE:-$0}); pwd)
 source "${CUR_DIR}/../util/env"
 source "${CUR_DIR}/../util/util"
-source "${CUR_DIR}/util/color"
 
 debugMode ${1+x}
 
@@ -15,9 +14,6 @@ MINT_AMT=10
 TX_AMT=10
 DATA_DIR="${CUR_DIR}/../../data"
 mkdir -p "${DATA_DIR}"
-
-# Address of the Bridge/Lock contract (for approval)
-BRIDGE_ADDR="0x2F5703804E29F4252FA9405B8D357220d11b3bd9"
 
 # Output files
 FILE_TX_BOB="${DATA_DIR}/erc20-tx-bob-to-alice.json"
@@ -68,7 +64,7 @@ printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross create-contract-tx \
     --call-info ${CALL_INFO_ALICE} \
     --output-document ${FILE_TX_ALICE}"
 
-printERC20 "${ERC20CLI_COORDINATOR_ALICE} erc20 approve --address ${BRIDGE_ADDR} --amount ${TX_AMT}"
+printERC20 "${ERC20CLI_COORDINATOR_ALICE} erc20 approve --address ${BRIDGE_CONTRACT_ADDR} --amount ${TX_AMT}"
 
 # --- 5. Initiate Cross-Chain Transaction ---
 infoln "Creating and Sending InitiateTx..."
