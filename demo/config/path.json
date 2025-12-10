@@ -4,7 +4,7 @@
     "client-id": "",
     "connection-id": "",
     "channel-id": "",
-    "port-id": "cross-coordinator",
+    "port-id": "cross",
     "order": "unordered",
     "version": "cross-coordinator-v1"
   },
@@ -13,7 +13,7 @@
     "client-id": "",
     "connection-id": "",
     "channel-id": "",
-    "port-id": "cross-participant",
+    "port-id": "cross",
     "order": "unordered",
     "version": "cross-participant-v1"
   },

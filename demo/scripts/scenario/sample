@@ -83,7 +83,7 @@ infoln "###########################################"
 DATA_DIR="${CUR_DIR}/../../data"
 mkdir -p "${DATA_DIR}"
 
-chan="channel-0:cross-coordinator"
+chan="channel-0:cross"
 
 if [ -z "$chan" ] || [ "$chan" == "[]" ]; then
     infoln "Warning: No IBC channel found. Skipping contract-tx creation. Please run handshake first."
@@ -195,17 +195,42 @@ printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross tx-auth-state $TX_ID"
 printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross coordinator-state $TX_ID"
 
 infoln "Relay packet and ack"
-for i in {1..5}; do
-  printRelay "${RLY} query unrelayed-packets ${PATH_NAME}"
-  packet=${LATEST_RESULT}
-  printRelay "${RLY} query unrelayed-acknowledgements ${PATH_NAME}"
-  ack=${LATEST_RESULT}
-  if [ "$packet" = '{"src":[],"dst":[]}' ] && [ "$ack" = '{"src":[],"dst":[]}' ]; then
-    break
-  fi
-  sleep 5
-done
+
+set +e
+sleep 3
+${RLY} query unrelayed-packets ${PATH_NAME}
+${RLY} tx relay ${PATH_NAME}
+
+sleep 3
+${RLY} query unrelayed-acknowledgements ${PATH_NAME}
+${RLY} tx relay-acknowledgements ${PATH_NAME}
+set -e
 
 sleep 3
 
 printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross coordinator-state $TX_ID"
+
+infoln "###########################################"
+infoln "###      Final Balance Verification     ###"
+infoln "###########################################"
+
+# --- Coordinator Chain ---
+# Alice sent 10 to Bob
+infoln "=== Checking balances on Coordinator (Expect: Alice=990, Bob=1010) ==="
+
+infoln "Alice's balance:"
+printERC20 "${ERC20CLI_COORDINATOR_ALICE} erc20 balanceOf --address ${ALICE_ADDRESS}"
+
+infoln "Bob's balance:"
+printERC20 "${ERC20CLI_COORDINATOR_BOB} erc20 balanceOf --address ${BOB_ADDRESS}"
+
+
+# --- Participant Chain ---
+# Bob sent 10 to Alice
+infoln "=== Checking balances on Participant (Expect: Bob=990, Alice=1010) ==="
+
+infoln "Bob's balance:"
+printERC20 "${ERC20CLI_PARTICIPANT_BOB} erc20 balanceOf --address ${BOB_ADDRESS}"
+
+infoln "Alice's balance:"
+printERC20 "${ERC20CLI_PARTICIPANT_ALICE} erc20 balanceOf --address ${ALICE_ADDRESS}"

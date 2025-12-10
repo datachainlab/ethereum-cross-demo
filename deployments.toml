@@ -3,7 +3,7 @@ endpoint_url = "http://127.0.0.1:8545"
 
 [31337.string]
 mnemonic = "math razor capable expose worth grape metal sunset metal sudden usage scheme"
-port_cross = "cross-coordinator"
+port_cross = "cross"
 mock_client_type = "mock-client"
 
 [31337.uint]
@@ -27,7 +27,7 @@ endpoint_url = "http://127.0.0.1:8546"
 
 [31338.string]
 mnemonic = "math razor capable expose worth grape metal sunset metal sudden usage scheme"
-port_cross = "cross-participant"
+port_cross = "cross"
 mock_client_type = "mock-client"
 
 [31338.uint]
