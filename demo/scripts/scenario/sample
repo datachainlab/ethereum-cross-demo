@@ -84,33 +84,28 @@ DATA_DIR="${CUR_DIR}/../../data"
 mkdir -p "${DATA_DIR}"
 
 chan="channel-0:cross"
+infoln "Using Channel: ${chan}"
 
-if [ -z "$chan" ] || [ "$chan" == "[]" ]; then
-    infoln "Warning: No IBC channel found. Skipping contract-tx creation. Please run handshake first."
-else
-    infoln "Using Channel: ${chan}"
+# Generate Call Info
+# Solidity: decodeCallInfo expects (address from, address to, uint256 amount)
+# We use cast abi-encode to generate exactly 96 bytes (32 bytes * 3) without function selector.
+# Scenario: Bob (From) -> Alice (To) sending 10 tokens
+infoln "Generating Call Info for transfer: Bob -> Alice (Amount: 10)"
 
-    # Generate Call Info
-    # Solidity: decodeCallInfo expects (address from, address to, uint256 amount)
-    # We use cast abi-encode to generate exactly 96 bytes (32 bytes * 3) without function selector.
-    # Scenario: Bob (From) -> Alice (To) sending 10 tokens
-    infoln "Generating Call Info for transfer: Bob -> Alice (Amount: 10)"
-    
-    call_info=$(cast abi-encode "f(address,address,uint256)" "${BOB_ADDRESS}" "${ALICE_ADDRESS}" "10")
-    call_info_no_prefix=${call_info#0x}
-    infoln "Call Info (Hex): ${call_info_no_prefix}"
+call_info=$(cast abi-encode "f(address,address,uint256)" "${BOB_ADDRESS}" "${ALICE_ADDRESS}" "10")
+call_info_no_prefix=${call_info#0x}
+infoln "Call Info (Hex): ${call_info_no_prefix}"
 
-    # Create Contract Transaction
-    # Signer is Bob (the sender on Coordinator chain)
-    printERC20 "${ERC20CLI_PARTICIPANT_PLATFORMER} cross create-contract-tx \
-    --initiator-chain-channel ${chan} \
-    --signer ${BOB_ADDRESS} \
-    --call-info ${call_info_no_prefix} \
-    --output-document ${DATA_DIR}/erc20-tx-bob-to-alice.json"
-    printERC20 "${ERC20CLI_PARTICIPANT_BOB} erc20 approve --address 0x2F5703804E29F4252FA9405B8D357220d11b3bd9 --amount 10"
+# Create Contract Transaction
+# Signer is Bob (the sender on Coordinator chain)
+printERC20 "${ERC20CLI_PARTICIPANT_PLATFORMER} cross create-contract-tx \
+--initiator-chain-channel ${chan} \
+--signer ${BOB_ADDRESS} \
+--call-info ${call_info_no_prefix} \
+--output-document ${DATA_DIR}/erc20-tx-bob-to-alice.json"
+printERC20 "${ERC20CLI_PARTICIPANT_BOB} erc20 approve --address 0x2F5703804E29F4252FA9405B8D357220d11b3bd9 --amount 10"
 
-    infoln "Contract Transaction saved to: ${DATA_DIR}/erc20-tx-bob-to-alice.json"
-fi
+infoln "Contract Transaction saved to: ${DATA_DIR}/erc20-tx-bob-to-alice.json"
 
 # ==============================================================================
 # Cross-Chain Transaction Preparation (Alice -> Bob, channel/port empty)
