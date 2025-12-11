@@ -1,10 +1,10 @@
 package cmd
 
 const (
-	FlagAmount                = "amount" // Changed from FlagtokenID for ERC20
+	FlagAmount                = "amount"
 	FlagAddress               = "address"
-	FlagOwner                 = "owner"   // Added for Allowance
-	FlagSpender               = "spender" // Added for Allowance
+	FlagOwner                 = "owner"
+	FlagSpender               = "spender"
 	FlagFromBlock             = "from-block"
 	FlagEventSignature        = "event-signature"
 	FlagContractAddress       = "contract-address"
@@ -17,4 +17,6 @@ const (
 	FlagArguments             = "arguments"
 	FlagArgumentTypes         = "argument-types"
 	FlagEthSignKey            = "eth-sign-key"
+	FlagContractTransactions  = "contract-txs"
+	FlagInitiateTx            = "initiate-tx"
 )

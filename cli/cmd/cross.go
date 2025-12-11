@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"io/ioutil"
 	"log"
 	"math/big"
 	"os"
@@ -35,159 +34,126 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// CrossCmd returns the root command for cross-chain operations.
 func crossCmd(ctx *config.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "cross",
 		Aliases: []string{"cross"},
-		Short:   "manage cross tx",
+		Short:   "Manage cross-chain transactions",
 	}
 
 	cmd.AddCommand(
-		getAddressCrossCmd(ctx),
-		createContractTransactionCrossCmd(ctx),
-		callInfoCrossCmd(ctx),
-		createInitiateTxCmd(ctx),
-		NewSendInitiateTxCmd(ctx),
-		txAuthStateCmd(ctx),
-		extSignTxCmd(ctx),
-		coordinatorStateCmd(ctx),
+		newAddressCmd(ctx),
+		newCreateContractTxCmd(ctx),
+		newCallInfoCmd(ctx),
+		newCreateInitiateTxCmd(ctx),
+		newSendInitiateTxCmd(ctx),
+		newTxAuthStateCmd(ctx),
+		newExtSignTxCmd(ctx),
+		newCoordinatorStateCmd(ctx),
 	)
 
 	return cmd
 }
 
-func setupCrossCMD(ctx *config.Context) (cross.CrossCMD, error) {
-	cmdCfg := ctx.Config
-	conn, err := eth.Connect(cmdCfg.BlockchainHost)
+func setupCrossClient(ctx *config.Context) (cross.CrossCMD, error) {
+	conn, err := eth.Connect(ctx.Config.BlockchainHost)
 	if err != nil {
 		return nil, err
 	}
 
-	crossAddr := common.HexToAddress(cmdCfg.CrossModuleAddress)
-
+	crossAddr := common.HexToAddress(ctx.Config.CrossModuleAddress)
 	token, err := contract.NewCrosssimplemodule(crossAddr, conn)
 	if err != nil {
 		return nil, err
 	}
 
-	pvtKey, err := cmdCfg.PrivateKey()
+	pvtKey, err := ctx.Config.PrivateKey()
 	if err != nil {
 		return nil, err
 	}
 
-	return cross.NewCrossCMDImpl(conn, cmdCfg.ChainID, pvtKey, token, crossAddr), nil
+	return cross.NewCrossCMDImpl(conn, ctx.Config.ChainID, pvtKey, token, crossAddr), nil
 }
 
-func coordinatorStateCmd(ctx *config.Context) *cobra.Command {
-	cmd := &cobra.Command{
+func newCoordinatorStateCmd(ctx *config.Context) *cobra.Command {
+	return &cobra.Command{
 		Use:   "coordinator-state [tx-id]",
 		Short: "Query the coordinator state of a transaction",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// 1. CrossCMDのセットアップ
-			cc, err := setupCrossCMD(ctx)
+			client, err := setupCrossClient(ctx)
 			if err != nil {
 				return err
 			}
 
-			// 2. 引数(TxID)のパース
-			// 0xプレフィックスを除去してデコード
-			txIDStr := strings.TrimPrefix(args[0], "0x")
-			txID, err := hex.DecodeString(txIDStr)
+			txID, err := decodeHexParam(args[0])
 			if err != nil {
-				return fmt.Errorf("invalid tx-id: must be hex string: %w", err)
+				return fmt.Errorf("invalid tx-id: %w", err)
 			}
 
-			// 3. リクエストデータの作成
-			// contractパッケージの構造体定義を使用
 			req := contract.QueryCoordinatorStateRequestData{
 				TxId: txID,
 			}
 
-			// 4. 問い合わせ実行 (CrossCMD経由)
-			resp, err := cc.QueryCoordinatorState(cmd.Context(), req)
+			resp, err := client.QueryCoordinatorState(cmd.Context(), req)
 			if err != nil {
 				return fmt.Errorf("failed to query coordinator state: %w", err)
 			}
 
-			// 5. 結果表示
-			// Goの[]byteフィールドはJSON標準ではBase64文字列として出力されます。
-			// 値を確認する際は echo "Base64Str" | base64 -d | xxd -p 等でデコードしてください。
-			bz, err := json.MarshalIndent(resp, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal response to json: %w", err)
-			}
-			log.Println(string(bz))
-
-			return nil
+			return printJSON(resp)
 		},
 	}
-
-	return cmd
 }
 
-func extSignTxCmd(ctx *config.Context) *cobra.Command {
+func newExtSignTxCmd(ctx *config.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ext-sign-tx [tx-id]",
 		Short: "Sign a cross-chain transaction using Extension Auth",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// 1. CrossCMDのセットアップ (接続、Contractインスタンス取得)
-			cc, err := setupCrossCMD(ctx)
+			client, err := setupCrossClient(ctx)
 			if err != nil {
 				return err
 			}
 
-			// 2. 引数(TxID)のパース
-			txIDStr := strings.TrimPrefix(args[0], "0x")
-			txIDBytes, err := hex.DecodeString(txIDStr)
+			txIDBytes, err := decodeHexParam(args[0])
 			if err != nil || len(txIDBytes) != 32 {
 				return fmt.Errorf("invalid tx-id: must be 32 bytes hex: %w", err)
 			}
 			var txID [32]byte
 			copy(txID[:], txIDBytes)
 
-			// 3. 署名用鍵の取得 (FlagEthSignKeyから)
 			ethSignKey, err := cmd.Flags().GetString(FlagEthSignKey)
 			if err != nil {
 				return err
 			}
-			// 秘密鍵オブジェクトへ変換 (署名生成に使用)
+
 			ethPrivKey, err := crypto.HexToECDSA(strings.TrimPrefix(ethSignKey, "0x"))
 			if err != nil {
 				return fmt.Errorf("failed to parse private key: %w", err)
 			}
-			// アドレス取得 (Signer ID用)
 			myAddr := crypto.PubkeyToAddress(ethPrivKey.PublicKey)
 
-			log.Printf("\n=== DEBUG INFO ===\n")
-			log.Printf("Using Private Key: ...%s\n", ethSignKey[len(ethSignKey)-4:]) // 末尾のみ表示
-			log.Printf("Derived Address:   %s\n", myAddr.Hex())
-			log.Printf("Target TxID:       %x\n", txID)
-			log.Printf("==================\n\n")
+			log.Printf("Signer Address: %s", myAddr.Hex())
 
-			// 4. SampleExtensionVerifier 向け署名データの作成
-			// signMSG として TxID を使用
-			signMSG := txID
-
-			// Ethereum Signed Message Hash を計算
+			// 1. Generate signature
 			// Keccak256("\x19Ethereum Signed Message:\n32" + signMSG)
 			msgHash := crypto.Keccak256Hash(
 				[]byte("\x19Ethereum Signed Message:\n32"),
-				signMSG[:],
+				txID[:],
 			)
 
-			// 署名生成 (65 bytes: R|S|V)
 			signature, err := crypto.Sign(msgHash.Bytes(), ethPrivKey)
 			if err != nil {
 				return fmt.Errorf("failed to sign message: %w", err)
 			}
-			// EIP-155 / Solidity ECDSA 互換のため V を 27/28 に調整
+			// Adjust V for EIP-155 / Solidity ECDSA compatibility
 			if signature[64] < 27 {
 				signature[64] += 27
 			}
 
-			// 5. ABIエンコーディング (bytes signature, bytes32 signMSG)
+			// 2. ABI Encode: (bytes signature, bytes32 signMSG)
 			bytesType, _ := abi.NewType("bytes", "", nil)
 			bytes32Type, _ := abi.NewType("bytes32", "", nil)
 			arguments := abi.Arguments{
@@ -195,16 +161,14 @@ func extSignTxCmd(ctx *config.Context) *cobra.Command {
 				{Type: bytes32Type},
 			}
 
-			packedValue, err := arguments.Pack(signature, signMSG)
+			packedValue, err := arguments.Pack(signature, txID)
 			if err != nil {
 				return fmt.Errorf("failed to abi encode: %w", err)
 			}
 
-			// 6. MsgExtSignTxData の構築
-			// Note: contract.MsgExtSignTxData の定義は bind 生成物に依存しますが、
-			// 一般的な abigen 出力を想定しています。
+			// 3. Construct MsgExtSignTxData
 			inputMsg := contract.MsgExtSignTxData{
-				TxID: txID[:], // bindingによっては [32]byte か []byte か異なります
+				TxID: txID[:],
 				Signers: []contract.AccountData{
 					{
 						Id: myAddr.Bytes(),
@@ -219,12 +183,7 @@ func extSignTxCmd(ctx *config.Context) *cobra.Command {
 				},
 			}
 
-			// Debug : Log the input message
-			bz, _ := json.MarshalIndent(inputMsg, "", "  ")
-			log.Printf("Submitting ExtSignTx with payload:\n%s", string(bz))
-
-			// 7. トランザクション送信
-			tx, err := cc.ExtSignTx(inputMsg)
+			tx, err := client.ExtSignTx(inputMsg)
 			if err != nil {
 				return fmt.Errorf("failed to execute ExtSignTx: %w", err)
 			}
@@ -234,93 +193,68 @@ func extSignTxCmd(ctx *config.Context) *cobra.Command {
 		},
 	}
 
-	// 署名用の鍵フラグを追加
-	ethSignKeyFlag(cmd)
+	cmd.Flags().String(FlagEthSignKey, "", "Ethereum private key for signing")
 	_ = cmd.MarkFlagRequired(FlagEthSignKey)
 
 	return cmd
 }
 
-func txAuthStateCmd(ctx *config.Context) *cobra.Command {
-	cmd := &cobra.Command{
+func newTxAuthStateCmd(ctx *config.Context) *cobra.Command {
+	return &cobra.Command{
 		Use:   "tx-auth-state [tx-id]",
 		Short: "Query the authentication state of a transaction",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cc, err := setupCrossCMD(ctx)
+			client, err := setupCrossClient(ctx)
 			if err != nil {
 				return err
 			}
 
-			// 引数(Hex文字列)を []byte に変換
-			txIDStr := strings.TrimPrefix(args[0], "0x")
-			txID, err := hex.DecodeString(txIDStr)
+			txID, err := decodeHexParam(args[0])
 			if err != nil {
 				return fmt.Errorf("invalid tx-id: %w", err)
 			}
 
-			// リクエスト作成
 			req := contract.QueryTxAuthStateRequestData{
 				TxID: txID,
 			}
 
-			// 問い合わせ実行
-			resp, err := cc.QueryTxAuthState(cmd.Context(), req)
+			resp, err := client.QueryTxAuthState(cmd.Context(), req)
 			if err != nil {
 				return err
 			}
 
-			// 結果表示
-			// Note: []byte型(Idなど)はJSONだとBase64になります。
-			// 必要であればHexに変換する処理を挟んでください。今回はそのまま出します。
-			bz, err := json.MarshalIndent(resp, "", "  ")
-			if err != nil {
-				return err
-			}
-			log.Println(string(bz))
-
-			return nil
+			return printJSON(resp)
 		},
 	}
-
-	return cmd
 }
 
-func createInitiateTxCmd(ctx *config.Context) *cobra.Command {
-	const (
-		flagContractTransactions = "contract-txs"
-	)
-
+func newCreateInitiateTxCmd(ctx *config.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create-initiate-tx",
 		Short: "Create a NewMsgInitiateTx transaction for a simple commit",
 		Args:  cobra.ExactArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			paths, err := cmd.Flags().GetStringSlice(flagContractTransactions)
+			paths, err := cmd.Flags().GetStringSlice(FlagContractTransactions)
 			if err != nil {
 				return err
 			}
 
-			ctxs, err := readContractTransactions(paths, ctx.Codec.UnmarshalJSON)
+			cTxs, err := readContractTransactions(paths, ctx.Codec.UnmarshalJSON)
 			if err != nil {
 				return err
 			}
-
-			chainIDStr := fmt.Sprintf("%d", ctx.Config.ChainID)
 
 			msg := types.NewMsgInitiateTx(
 				nil,
-				chainIDStr,
-
+				fmt.Sprintf("%d", ctx.Config.ChainID),
 				uint64(time.Now().Unix()),
 				txtypes.COMMIT_PROTOCOL_SIMPLE,
-				ctxs,
-				// TODO: Fix to ZeroHeight but currently scenario is failure.
-				clienttypes.NewHeight(0, 10000),
+				cTxs,
+				clienttypes.NewHeight(0, 10000), // Fixed height for demo
 				0,
 			)
 
-			// prepare output document
 			closeFunc, err := setOutputFile(cmd)
 			if err != nil {
 				return err
@@ -340,30 +274,25 @@ func createInitiateTxCmd(ctx *config.Context) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringSlice(flagContractTransactions, nil, "A file path to includes a contract transaction")
-	_ = cmd.MarkFlagRequired(flagContractTransactions)
-
-	cmd.Flags().String(flags.FlagOutputDocument, "", "The document will be written to the given file instead of STDOUT")
+	cmd.Flags().StringSlice(FlagContractTransactions, nil, "File paths to contract transactions")
+	_ = cmd.MarkFlagRequired(FlagContractTransactions)
+	cmd.Flags().String(flags.FlagOutputDocument, "", "Write output to file instead of STDOUT")
 
 	return cmd
 }
 
-func NewSendInitiateTxCmd(ctx *config.Context) *cobra.Command {
-	const (
-		flagInitiateTx = "initiate-tx"
-	)
-
+func newSendInitiateTxCmd(ctx *config.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "send-initiate-tx",
 		Short: "Send a NewMsgInitiateTx transaction for a simple commit",
 		Args:  cobra.ExactArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cc, err := setupCrossCMD(ctx)
+			client, err := setupCrossClient(ctx)
 			if err != nil {
 				return err
 			}
 
-			txPath, err := cmd.Flags().GetString(flagInitiateTx)
+			txPath, err := cmd.Flags().GetString(FlagInitiateTx)
 			if err != nil {
 				return err
 			}
@@ -376,7 +305,7 @@ func NewSendInitiateTxCmd(ctx *config.Context) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			signer, err := getSigner(ctx, ethSignKey)
+			signer, err := getSigner(ethSignKey)
 			if err != nil {
 				return err
 			}
@@ -386,30 +315,23 @@ func NewSendInitiateTxCmd(ctx *config.Context) *cobra.Command {
 				return err
 			}
 
-			// Convert types.MsgInitiateTx to contract.MsgInitiateTxData
 			contractMsg := toContractMsgInitiateTxData(msg)
 
-			// Debug: Log the contract message data
-			bz, _ := json.MarshalIndent(contractMsg, "", "  ")
-			log.Printf("Submitting InitiateTx with payload:\n%s", string(bz))
-
-			// Submit the transaction to the contract via CrossCMD
-			tx, err := cc.InitiateTx(contractMsg)
+			// Submit via CrossCMD
+			tx, err := client.InitiateTx(contractMsg)
 			if err != nil {
 				return err
 			}
 			log.Printf("Transaction submitted: hash='%v'", tx.Hash().Hex())
 			log.Println("Waiting for transaction to be mined...")
 
-			// 2. マイニング待ち & イベント取得 (エラー解析も内部で実施)
-			event, err := cc.GetTxInitiatedEvent(cmd.Context(), tx)
+			// Wait for mining and event emission
+			event, err := client.GetTxInitiatedEvent(cmd.Context(), tx)
 			if err != nil {
-				return err // 詳細なRevert理由などが含まれています
+				return err
 			}
 
 			log.Println("Transaction executed successfully!")
-
-			// 3. 結果表示
 			fmt.Printf("\n=== InitiateTx Result ===\n")
 			fmt.Printf("TxID (Hex): 0x%x\n", event.TxID)
 			fmt.Printf("Sender:     %s\n", event.Proposer.Hex())
@@ -419,81 +341,16 @@ func NewSendInitiateTxCmd(ctx *config.Context) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().String(flagInitiateTx, "", "A file path to includes a initiate-tx")
-	_ = cmd.MarkFlagRequired(flagInitiateTx)
-
-	cmd.Flags().String(flags.FlagOutputDocument, "", "The document will be written to the given file instead of STDOUT")
-
-	ethSignKeyFlag(cmd)
+	cmd.Flags().String(FlagInitiateTx, "", "File path to initiate-tx")
+	_ = cmd.MarkFlagRequired(FlagInitiateTx)
+	cmd.Flags().String(flags.FlagOutputDocument, "", "Write output to file instead of STDOUT")
+	cmd.Flags().String(FlagEthSignKey, "", "Ethereum private key for signing")
 
 	return cmd
 }
 
-func ethSignKeyFlag(cmd *cobra.Command) *cobra.Command {
-	cmd.Flags().String(FlagEthSignKey, "", "the Ethereum Chain private key used by the importer for signing")
-	return cmd
-}
-
-func readInitiateTx(m codec.JSONCodec, path string) (*types.MsgInitiateTx, error) {
-	bz, err := ioutil.ReadFile(filepath.Clean(path))
-	if err != nil {
-		return nil, err
-	}
-	var iTx types.MsgInitiateTx
-	if err := m.UnmarshalJSON(bz, &iTx); err != nil {
-		return nil, err
-	}
-
-	return &iTx, nil
-}
-
-func getSigner(ctx *config.Context, ethSignKey string) (authtypes.Account, error) {
-	var signer authtypes.Account
-	addr, err := hexToEthereumAddress(ethSignKey)
-	if err != nil {
-		return authtypes.Account{}, err
-	}
-	signer = authtypes.Account{
-		Id:       addr,
-		AuthType: authtypes.NewAuthTypeExtension(&extauthtypes.SampleAuthExtension{}),
-	}
-	return signer, nil
-}
-
-func hexToEthereumAddress(hexString string) ([]byte, error) {
-	hexString = strings.TrimPrefix(hexString, "0x")
-	if privKey, err := crypto.HexToECDSA(hexString); err != nil {
-		return nil, err
-	} else {
-		return crypto.PubkeyToAddress(privKey.PublicKey).Bytes(), nil
-	}
-}
-
-func readContractTransactions(
-	pathList []string,
-	unmarshal func([]byte, proto.Message) error,
-) ([]types.ContractTransaction, error) {
-	cTxs := make([]types.ContractTransaction, 0, len(pathList))
-
-	for _, path := range pathList {
-		bz, err := os.ReadFile(filepath.Clean(path))
-		if err != nil {
-			return nil, err
-		}
-
-		var cTx types.ContractTransaction
-		if err := unmarshal(bz, &cTx); err != nil {
-			return nil, err
-		}
-
-		cTxs = append(cTxs, cTx)
-	}
-
-	return cTxs, nil
-}
-
-func getAddressCrossCmd(ctx *config.Context) *cobra.Command {
-	cmd := &cobra.Command{
+func newAddressCmd(ctx *config.Context) *cobra.Command {
+	return &cobra.Command{
 		Use:   "address",
 		Short: "Get Cross contract address",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -501,32 +358,29 @@ func getAddressCrossCmd(ctx *config.Context) *cobra.Command {
 			return nil
 		},
 	}
-
-	return cmd
 }
 
-func createContractTransactionCrossCmd(ctx *config.Context) *cobra.Command {
+func newCreateContractTxCmd(ctx *config.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create-contract-tx",
 		Short: "Create a new contract transaction",
 		Args:  cobra.ExactArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
-
-			signer, err := cmd.Flags().GetString(FlagSigner)
+			signerStr, err := cmd.Flags().GetString(FlagSigner)
 			if err != nil {
 				return err
 			}
 
 			account := authtypes.Account{
-				Id:       common.HexToAddress(signer).Bytes(),
+				Id:       common.HexToAddress(signerStr).Bytes(),
 				AuthType: authtypes.NewAuthTypeExtension(&extauthtypes.SampleAuthExtension{}),
 			}
 
-			callInfo, err := cmd.Flags().GetString(FlagCallInfo)
+			callInfoHex, err := cmd.Flags().GetString(FlagCallInfo)
 			if err != nil {
 				return err
 			}
-			callInfoBytes, err := hex.DecodeString(callInfo)
+			callInfoBytes, err := hex.DecodeString(callInfoHex)
 			if err != nil {
 				return err
 			}
@@ -549,7 +403,7 @@ func createContractTransactionCrossCmd(ctx *config.Context) *cobra.Command {
 				Signers:           []authtypes.Account{account},
 				CallInfo:          callInfoBytes,
 			}
-			// prepare output document
+
 			closeFunc, err := setOutputFile(cmd)
 			if err != nil {
 				return err
@@ -569,24 +423,24 @@ func createContractTransactionCrossCmd(ctx *config.Context) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().String(FlagInitiatorChainChannel, "", "The channel info: '<channelID>:<portID>'")
+	cmd.Flags().String(FlagInitiatorChainChannel, "", "Channel info: '<channelID>:<portID>'")
 	_ = cmd.MarkFlagRequired(FlagInitiatorChainChannel)
-	cmd.Flags().String(FlagSigner, "", "signer")
+	cmd.Flags().String(FlagSigner, "", "Signer address")
 	_ = cmd.MarkFlagRequired(FlagSigner)
-	cmd.Flags().String(FlagCallInfo, "", "call info")
+	cmd.Flags().String(FlagCallInfo, "", "Call info hex")
 	_ = cmd.MarkFlagRequired(FlagCallInfo)
-	cmd.Flags().String(flags.FlagOutputDocument, "", "The document will be written to the given file instead of STDOUT")
+	cmd.Flags().String(flags.FlagOutputDocument, "", "Write output to file instead of STDOUT")
 
 	return cmd
 }
 
-func callInfoCrossCmd(ctx *config.Context) *cobra.Command {
+func newCallInfoCmd(ctx *config.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "call-info",
 		Short: "Create a call info for contract transaction",
 		Args:  cobra.ExactArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			contract, err := cmd.Flags().GetString(FlagAddress)
+			contractAddr, err := cmd.Flags().GetString(FlagAddress)
 			if err != nil {
 				return err
 			}
@@ -603,14 +457,13 @@ func callInfoCrossCmd(ctx *config.Context) *cobra.Command {
 				return err
 			}
 			if len(arguments) != len(argumentTypes) {
-				return errors.New("arguments and argumentTypes are different length")
+				return errors.New("arguments and argumentTypes length mismatch")
 			}
 
 			var convertedArgs []interface{}
 			for i, a := range arguments {
 				if a != "" {
-					t := argumentTypes[i]
-					arg, err := toArg(a, t)
+					arg, err := toArg(a, argumentTypes[i])
 					if err != nil {
 						return err
 					}
@@ -618,30 +471,86 @@ func callInfoCrossCmd(ctx *config.Context) *cobra.Command {
 				}
 			}
 
-			callInfo, err := toCallInfo(common.HexToAddress(contract), funcName, convertedArgs)
+			callInfoBytes, err := toCallInfo(common.HexToAddress(contractAddr), funcName, convertedArgs)
 			if err != nil {
 				return err
 			}
 
-			fmt.Println(hex.EncodeToString(callInfo))
-
+			fmt.Println(hex.EncodeToString(callInfoBytes))
 			return nil
 		},
 	}
 
-	cmd.Flags().String(FlagAddress, "", "contract address")
+	cmd.Flags().String(FlagAddress, "", "Contract address")
 	_ = cmd.MarkFlagRequired(FlagAddress)
-	cmd.Flags().String(FlagFunctionName, "", "function name")
+	cmd.Flags().String(FlagFunctionName, "", "Function name")
 	_ = cmd.MarkFlagRequired(FlagFunctionName)
-	cmd.Flags().StringArray(FlagArguments, []string{""}, "arguments")
-	cmd.Flags().StringArray(FlagArgumentTypes, []string{""}, "argument type")
+	cmd.Flags().StringArray(FlagArguments, []string{""}, "Arguments")
+	cmd.Flags().StringArray(FlagArgumentTypes, []string{""}, "Argument types")
 	return cmd
+}
+
+// --- Helpers ---
+
+func decodeHexParam(s string) ([]byte, error) {
+	return hex.DecodeString(strings.TrimPrefix(s, "0x"))
+}
+
+func printJSON(v interface{}) error {
+	bz, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal to json: %w", err)
+	}
+	log.Println(string(bz))
+	return nil
+}
+
+func readInitiateTx(m codec.JSONCodec, path string) (*types.MsgInitiateTx, error) {
+	bz, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return nil, err
+	}
+	var iTx types.MsgInitiateTx
+	if err := m.UnmarshalJSON(bz, &iTx); err != nil {
+		return nil, err
+	}
+	return &iTx, nil
+}
+
+func getSigner(ethSignKey string) (authtypes.Account, error) {
+	hexString := strings.TrimPrefix(ethSignKey, "0x")
+	privKey, err := crypto.HexToECDSA(hexString)
+	if err != nil {
+		return authtypes.Account{}, err
+	}
+	addr := crypto.PubkeyToAddress(privKey.PublicKey).Bytes()
+
+	return authtypes.Account{
+		Id:       addr,
+		AuthType: authtypes.NewAuthTypeExtension(&extauthtypes.SampleAuthExtension{}),
+	}, nil
+}
+
+func readContractTransactions(pathList []string, unmarshal func([]byte, proto.Message) error) ([]types.ContractTransaction, error) {
+	cTxs := make([]types.ContractTransaction, 0, len(pathList))
+	for _, path := range pathList {
+		bz, err := os.ReadFile(filepath.Clean(path))
+		if err != nil {
+			return nil, err
+		}
+		var cTx types.ContractTransaction
+		if err := unmarshal(bz, &cTx); err != nil {
+			return nil, err
+		}
+		cTxs = append(cTxs, cTx)
+	}
+	return cTxs, nil
 }
 
 func parseChannelInfoFromString(s string) (*xcctypes.ChannelInfo, error) {
 	parts := strings.Split(s, ":")
 	if len(parts) != 2 {
-		return nil, errors.New("channel format must be follow a format: '<channelID>:<portID>'")
+		return nil, errors.New("invalid channel format: expected '<channelID>:<portID>'")
 	}
 	return &xcctypes.ChannelInfo{Channel: parts[0], Port: parts[1]}, nil
 }
@@ -671,27 +580,28 @@ func setOutputFile(cmd *cobra.Command) (func(), error) {
 	}
 
 	cmd.SetOut(fp)
-
 	return func() { fp.Close() }, nil
 }
 
-type callInfo struct {
+// --- Data Conversion & RLP ---
+
+type callInfoStruct struct {
 	Contract     common.Address
 	FunctionName string
 	Args         []interface{}
 }
 
-func toCallInfo(contract common.Address, funcName string, args []interface{}) ([]byte, error) {
-	ci := callInfo{
-		Contract:     contract,
+func toCallInfo(contractAddr common.Address, funcName string, args []interface{}) ([]byte, error) {
+	ci := callInfoStruct{
+		Contract:     contractAddr,
 		FunctionName: funcName,
 		Args:         args,
 	}
 	return rlp.EncodeToBytes(ci)
 }
 
-func toArg(raw string, types string) (interface{}, error) {
-	switch types {
+func toArg(raw string, typeName string) (interface{}, error) {
+	switch typeName {
 	case "string":
 		return raw, nil
 	case "address":
@@ -699,11 +609,11 @@ func toArg(raw string, types string) (interface{}, error) {
 	case "int":
 		i, ok := new(big.Int).SetString(raw, 10)
 		if !ok {
-			return nil, errors.New("failed to convert")
+			return nil, errors.New("failed to convert int")
 		}
 		return i, nil
 	default:
-		return nil, errors.New("invalid args")
+		return nil, fmt.Errorf("invalid arg type: %s", typeName)
 	}
 }
 
@@ -718,7 +628,7 @@ func toContractAny(a *codectypes.Any) contract.GoogleProtobufAnyData {
 }
 
 func toContractMsgInitiateTxData(msg *types.MsgInitiateTx) contract.MsgInitiateTxData {
-	// 1. Convert Signers
+	// Convert Signers
 	var contractSigners []contract.AccountData
 	for _, s := range msg.Signers {
 		contractSigners = append(contractSigners, contract.AccountData{
@@ -730,7 +640,7 @@ func toContractMsgInitiateTxData(msg *types.MsgInitiateTx) contract.MsgInitiateT
 		})
 	}
 
-	// 2. Convert ContractTransactions
+	// Convert ContractTransactions
 	var contractTxs []contract.ContractTransactionData
 	for _, ctx := range msg.ContractTransactions {
 		var ctxSigners []contract.AccountData
@@ -750,7 +660,6 @@ func toContractMsgInitiateTxData(msg *types.MsgInitiateTx) contract.MsgInitiateT
 		})
 	}
 
-	// 3. Create contract message struct
 	return contract.MsgInitiateTxData{
 		ChainId:              msg.ChainId,
 		Nonce:                msg.Nonce,
