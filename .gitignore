@@ -4,9 +4,3 @@ yarn-error.log
 broadcast
 cache
 build
-/demo/config/chains
-/demo/bin
-/demo/.erc20cli
-/demo/.urelayer
-/demo/fixtures
-/demo/data

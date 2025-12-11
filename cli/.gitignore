@@ -1,6 +1,1 @@
 build
-erc721-cli
-.fabric-besu-cross-demo.yaml
-wallet/*
-!wallet/.gitkeep
-!wallet/*.sample

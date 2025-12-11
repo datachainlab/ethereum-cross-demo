@@ -21,7 +21,7 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.fabric-besu-cross-demo.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file")
 
 	interfaceRegistry := cosmostypes.NewInterfaceRegistry()
 	cdc := codec.NewProtoCodec(interfaceRegistry)
