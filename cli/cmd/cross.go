@@ -16,12 +16,11 @@ import (
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	"github.com/cosmos/cosmos-sdk/crypto/hd"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	clienttypes "github.com/cosmos/ibc-go/modules/core/02-client/types"
 	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/config"
+	contract "github.com/datachainlab/anvil-cross-demo/cmds/erc20/contract/crosssimplemodule"
 	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/cross"
-	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/cross/contract"
+	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/eth"
 	extauthtypes "github.com/datachainlab/anvil-cross-demo/cmds/erc20/types"
 	authtypes "github.com/datachainlab/cross/x/core/auth/types"
 	"github.com/datachainlab/cross/x/core/initiator/types"
@@ -59,7 +58,7 @@ func crossCmd(ctx *config.Context) *cobra.Command {
 
 func setupCrossCMD(ctx *config.Context) (cross.CrossCMD, error) {
 	cmdCfg := ctx.Config
-	conn, err := cross.Connect(cmdCfg.BlockchainHost)
+	conn, err := eth.Connect(cmdCfg.BlockchainHost)
 	if err != nil {
 		return nil, err
 	}
@@ -468,16 +467,6 @@ func hexToEthereumAddress(hexString string) ([]byte, error) {
 	} else {
 		return crypto.PubkeyToAddress(privKey.PublicKey).Bytes(), nil
 	}
-}
-
-func hexToSecp256k1PrivKey(hexString string) (*secp256k1.PrivKey, error) {
-	hexString = strings.TrimPrefix(hexString, "0x")
-	bz, err := hex.DecodeString(hexString)
-	if err != nil {
-		return nil, err
-	}
-
-	return hd.Secp256k1.Generate()(bz).(*secp256k1.PrivKey), nil
 }
 
 func readContractTransactions(

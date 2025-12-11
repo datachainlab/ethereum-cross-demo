@@ -5,8 +5,9 @@ import (
 	"math/big"
 
 	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/config"
+	contract "github.com/datachainlab/anvil-cross-demo/cmds/erc20/contract/myerc20"
 	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/erc20"
-	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/erc20/contract"
+	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/eth"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/pkg/errors"
@@ -23,8 +24,8 @@ func erc20Cmd(ctx *config.Context) *cobra.Command {
 		getAddressERC20Cmd(ctx),
 		mintERC20Cmd(ctx),
 		approveERC20Cmd(ctx),
-		transferERC20Cmd(ctx),  // Added
-		allowanceERC20Cmd(ctx), // Added
+		transferERC20Cmd(ctx),
+		allowanceERC20Cmd(ctx),
 		balanceOfERC20Cmd(ctx),
 	)
 	return cmd
@@ -32,7 +33,7 @@ func erc20Cmd(ctx *config.Context) *cobra.Command {
 
 func setupERC20CMD(ctx *config.Context) (erc20.ERC20CMD, error) {
 	cmdCfg := ctx.Config
-	conn, err := erc20.Connect(cmdCfg.BlockchainHost)
+	conn, err := eth.Connect(cmdCfg.BlockchainHost)
 	if err != nil {
 		return nil, err
 	}

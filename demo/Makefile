@@ -33,3 +33,10 @@ demo:
 	@./scripts/scenario/atomicswap-success
 	@./scripts/scenario/atomicswap-failure
 	@echo "Demo completed. Please check the logs above for details."
+
+.PHONY: restart-demo
+restart-demo:
+	make network-down
+	make build
+	make network
+	make demo

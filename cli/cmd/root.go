@@ -32,7 +32,6 @@ func init() {
 	ctx := &config.Context{Config: &cmdCfg, Codec: cdc}
 
 	rootCmd.AddCommand(
-		getCmd(ctx),
 		crossCmd(ctx),
 		erc20Cmd(ctx),
 	)

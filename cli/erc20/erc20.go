@@ -4,7 +4,8 @@ import (
 	"crypto/ecdsa"
 	"math/big"
 
-	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/erc20/contract"
+	contract "github.com/datachainlab/anvil-cross-demo/cmds/erc20/contract/myerc20"
+	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/eth"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -35,8 +36,7 @@ func NewERC20CMDImpl(conn *ethclient.Client, chainID int64, pvtKey *ecdsa.Privat
 }
 
 func (e *ERC20CMDImpl) Mint(to common.Address, amount *big.Int) (*types.Transaction, error) {
-	// CreateTransactionSignerは元のコードにあるユーティリティ関数と仮定しています
-	signer, err := CreateTransactionSigner(e.conn, e.chainID, e.pvtKey)
+	signer, err := eth.CreateTransactionSigner(e.conn, e.chainID, e.pvtKey)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (e *ERC20CMDImpl) Mint(to common.Address, amount *big.Int) (*types.Transact
 }
 
 func (e *ERC20CMDImpl) Approve(spender common.Address, amount *big.Int) (*types.Transaction, error) {
-	signer, err := CreateTransactionSigner(e.conn, e.chainID, e.pvtKey)
+	signer, err := eth.CreateTransactionSigner(e.conn, e.chainID, e.pvtKey)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func (e *ERC20CMDImpl) Approve(spender common.Address, amount *big.Int) (*types.
 }
 
 func (e *ERC20CMDImpl) Transfer(to common.Address, amount *big.Int) (*types.Transaction, error) {
-	signer, err := CreateTransactionSigner(e.conn, e.chainID, e.pvtKey)
+	signer, err := eth.CreateTransactionSigner(e.conn, e.chainID, e.pvtKey)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,6 @@ func (e *ERC20CMDImpl) Transfer(to common.Address, amount *big.Int) (*types.Tran
 }
 
 func (e *ERC20CMDImpl) Allowance(owner common.Address, spender common.Address) (*big.Int, error) {
-	// 読み取り専用メソッドなのでsigner(opts)はnilで呼び出します
 	amount, err := e.token.Allowance(nil, owner, spender)
 	if err != nil {
 		return nil, err

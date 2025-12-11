@@ -1,4 +1,4 @@
-package erc20
+package eth
 
 import (
 	"context"
