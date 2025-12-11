@@ -2,8 +2,8 @@
   "name": "cross-solidity",
   "version": "0.0.1",
   "scripts": {
-    "deploy1": "forge script demo/chains/coordinator/scripts/DeployAll.s.sol --rpc-url coordinator --broadcast",
-    "deploy2": "forge script demo/chains/participant/scripts/DeployAll.s.sol --rpc-url participant --broadcast",
+    "deploy-coordinator": "forge script demo/chains/coordinator/scripts/DeployAll.s.sol --rpc-url coordinator --broadcast",
+    "deploy-participant": "forge script demo/chains/participant/scripts/DeployAll.s.sol --rpc-url participant --broadcast",
     "compile": "forge build",
     "postinstall": "husky && forge build",
     "clean": "rm -rf build",

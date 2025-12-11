@@ -6,10 +6,10 @@ source ${SCRIPT_DIR}/util/color
 
 CONF_DIR=${SCRIPT_DIR}/../config
 DEMO_DIR=${SCRIPT_DIR}/../../demo
-BIN_DIR=${SCRIPT_DIR}/../../build
+BIN_DIR=${SCRIPT_DIR}/../bin
 
 RELAYER_CONF="${DEMO_DIR}/.urelayer"
-RLY_BINARY=${BIN_DIR}/yrly
+RLY_BINARY=${BIN_DIR}/uly
 RLY="${RLY_BINARY} --home ${RELAYER_CONF}"
 println "Loaded relayer command: $RLY"
 

@@ -29,14 +29,9 @@ jobs:
       - name: Filter LCOV
         run: |
           lcov --remove lcov.info \
-            'test/*' \
-            'script/*' \
-            'src/proto/**' \
-            'src/core/PacketHandler.sol' \
-            'src/core/ContractRegistry.sol' \
-            'src/core/TxAuthManagerBase.sol' \
-            'src/core/TxManagerBase.sol' \
-            'src/core/TxRunnerBase.sol' \
+            'test/**' \
+            'script/**' \
+            'demo/**' \
             -o lcov.filtered.info
 
       - name: Report code coverage

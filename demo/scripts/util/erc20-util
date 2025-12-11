@@ -9,7 +9,7 @@ ROOT_DIR=$(cd ${CUR_DIR}/../../..; pwd)
 source ${CUR_DIR}/color
 
 ERC20CLI_CONFIG_DIR=${ROOT_DIR}/demo/.erc20cli
-ERC20CLI_BINARY=${ROOT_DIR}/build/erc20cli
+ERC20CLI_BINARY=${ROOT_DIR}/demo/bin/erc20cli
 DEPLOYMENTS_FILE=${ROOT_DIR}/deployments.toml
 
 # Check binary
