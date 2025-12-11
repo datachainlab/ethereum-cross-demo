@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/cmd"
+	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/cmd"
 )
 
 func main() {

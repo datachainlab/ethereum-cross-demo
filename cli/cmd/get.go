@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/erc20"
+	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/erc20"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -13,7 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 
-	"github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/config"
+	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/config"
 )
 
 func getCmd(ctx *config.Context) *cobra.Command {

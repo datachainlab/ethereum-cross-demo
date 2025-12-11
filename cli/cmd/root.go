@@ -9,8 +9,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/config"
-	exttypes "github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/types"
+	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/config"
+	exttypes "github.com/datachainlab/anvil-cross-demo/cmds/erc20/types"
 )
 
 var cfgFile string
@@ -56,7 +56,7 @@ func initConfig(ctx *config.Context) error {
 		}
 
 		viper.AddConfigPath(home)
-		viper.SetConfigName(".fabric-besu-cross-demo")
+		viper.SetConfigName(".anvil-cross-demo")
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match

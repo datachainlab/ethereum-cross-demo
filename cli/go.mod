@@ -1,4 +1,4 @@
-module github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20
+module github.com/datachainlab/anvil-cross-demo/cmds/erc20
 
 go 1.24.0
 

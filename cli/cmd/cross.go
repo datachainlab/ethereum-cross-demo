@@ -19,15 +19,14 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	clienttypes "github.com/cosmos/ibc-go/modules/core/02-client/types"
+	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/config"
+	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/cross"
+	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/cross/contract"
+	extauthtypes "github.com/datachainlab/anvil-cross-demo/cmds/erc20/types"
 	authtypes "github.com/datachainlab/cross/x/core/auth/types"
 	"github.com/datachainlab/cross/x/core/initiator/types"
 	txtypes "github.com/datachainlab/cross/x/core/tx/types"
 	xcctypes "github.com/datachainlab/cross/x/core/xcc/types"
-	"github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/config"
-	"github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/cross"
-	"github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/cross/contract"
-	besuauthtypes "github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/types"
-	exttypes "github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -213,7 +212,7 @@ func extSignTxCmd(ctx *config.Context) *cobra.Command {
 						AuthType: contract.AuthTypeData{
 							Mode: 3, // AUTH_MODE_EXTENSION
 							Option: contract.GoogleProtobufAnyData{
-								TypeUrl: "/verifier.sample.extension",
+								TypeUrl: "/extension.types.SampleAuthExtension",
 								Value:   packedValue,
 							},
 						},
@@ -457,7 +456,7 @@ func getSigner(ctx *config.Context, ethSignKey string) (authtypes.Account, error
 	}
 	signer = authtypes.Account{
 		Id:       addr,
-		AuthType: authtypes.NewAuthTypeExtension(&besuauthtypes.BesuAuthExtension{}),
+		AuthType: authtypes.NewAuthTypeExtension(&extauthtypes.SampleAuthExtension{}),
 	}
 	return signer, nil
 }
@@ -531,7 +530,7 @@ func createContractTransactionCrossCmd(ctx *config.Context) *cobra.Command {
 
 			account := authtypes.Account{
 				Id:       common.HexToAddress(signer).Bytes(),
-				AuthType: authtypes.NewAuthTypeExtension(&exttypes.BesuAuthExtension{}),
+				AuthType: authtypes.NewAuthTypeExtension(&extauthtypes.SampleAuthExtension{}),
 			}
 
 			callInfo, err := cmd.Flags().GetString(FlagCallInfo)

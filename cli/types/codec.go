@@ -10,6 +10,6 @@ import (
 func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 	registry.RegisterImplementations(
 		(*authtypes.AuthExtensionVerifier)(nil),
-		&BesuAuthExtension{},
+		&SampleAuthExtension{},
 	)
 }

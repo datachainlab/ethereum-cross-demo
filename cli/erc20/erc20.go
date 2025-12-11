@@ -4,7 +4,7 @@ import (
 	"crypto/ecdsa"
 	"math/big"
 
-	"github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/erc20/contract"
+	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/erc20/contract"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"

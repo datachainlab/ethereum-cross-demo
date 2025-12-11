@@ -6,8 +6,8 @@ import (
 	authtypes "github.com/datachainlab/cross/x/core/auth/types"
 )
 
-var _ authtypes.AuthExtensionVerifier = (*BesuAuthExtension)(nil)
+var _ authtypes.AuthExtensionVerifier = (*SampleAuthExtension)(nil)
 
-func (BesuAuthExtension) Verify(ctx sdk.Context, signer authtypes.Account, signature signing.SignatureV2, tx sdk.Tx) error {
+func (SampleAuthExtension) Verify(ctx sdk.Context, signer authtypes.Account, signature signing.SignatureV2, tx sdk.Tx) error {
 	return nil
 }

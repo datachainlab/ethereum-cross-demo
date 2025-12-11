@@ -8,7 +8,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/datachainlab/fabric-besu-cross-demo/cmds/erc20/cross/contract"
+	"github.com/datachainlab/anvil-cross-demo/cmds/erc20/cross/contract"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"

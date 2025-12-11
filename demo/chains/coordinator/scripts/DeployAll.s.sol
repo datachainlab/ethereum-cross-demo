@@ -88,7 +88,7 @@ contract DeployAll is Script, Config {
         console2.log("  SampleExtensionVerifier:", address(verifier));
 
         string[] memory typeUrls = new string[](1);
-        typeUrls[0] = "/verifier.sample.extension";
+        typeUrls[0] = "/extension.types.SampleAuthExtension";
 
         IAuthExtensionVerifier[] memory verifiers = new IAuthExtensionVerifier[](1);
         verifiers[0] = IAuthExtensionVerifier(verifier);

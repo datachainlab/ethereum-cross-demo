@@ -6,7 +6,8 @@ import {CrossContext} from "@datachainlab/cross-solidity/src/core/IContractModul
 import {AuthType} from "@datachainlab/cross-solidity/src/proto/cross/core/auth/Auth.sol";
 
 contract MyERC20TransferModule is ERC20TransferModule {
-    bytes32 public constant EXTENSION_TYPE_URL_HASH = keccak256(abi.encodePacked("/verifier.sample.extension"));
+    bytes32 public constant EXTENSION_TYPE_URL_HASH =
+        keccak256(abi.encodePacked("/extension.types.SampleAuthExtension"));
 
     function _authorize(CrossContext calldata context, bytes calldata callInfo) internal view override {
         (address from,,) = decodeCallInfo(callInfo);
