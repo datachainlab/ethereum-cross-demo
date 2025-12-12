@@ -1,5 +1,27 @@
 #!/usr/bin/env bash
 
+# ==============================================================================
+# SCENARIO: ERC20 Cross-Chain Atomic Swap (Failure Case: Missing Approval)
+# ==============================================================================
+#
+# [ACTORS]
+#   - Alice (Coordinator Chain): Initiator.
+#   - Bob   (Participant Chain): Counterparty.
+#
+# [PROCESS (FAILURE DEMO)]
+#   1. Setup: Mint tokens on both chains (10 each).
+#   2. Auth : Alice approves the bridge. **Bob intentionally skips the Approve step.**
+#   3. Sign : Alice initiates the trade; Bob signs the agreement on the Coordinator.
+#   4. Exec : Relayer attempts to execute the swap.
+#   5. Fail : The transaction on the Participant chain REVERTS because the
+#             Bridge Contract does not have allowance to spend Bob's tokens.
+#
+# [RESULT (Rollback / No Change)]
+#   Alice: [Coord: 10, Part: 0] (Unchanged)
+#   Bob  : [Coord: 0,  Part: 10] (Unchanged)
+#   * The swap fails atomically. The protocol ensures funds remain with owners.
+# ==============================================================================
+
 set -eu
 
 # --- Environment & Imports ---
