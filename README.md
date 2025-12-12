@@ -6,6 +6,7 @@
 - [Docker](https://www.docker.com/products/docker-desktop)
 - [jq](https://stedolan.github.io/jq/)
 - Node.js v25
+- [Foundry](https://book.getfoundry.sh/getting-started/installation) (requires `cast` command)
 
 ## Testing the demo
 
