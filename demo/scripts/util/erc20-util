@@ -125,3 +125,22 @@ function print() {
 function printERC20() {
   print "$1" erc20cli
 }
+
+function assertBalance() {
+    local CHAIN_NAME=$1
+    local USER_NAME=$2
+    local CMD=$3
+    local EXPECTED=$4
+
+    # Execute command to get balance
+    local ACTUAL=$(eval $CMD | tail -n 1 | tr -d '\r\n')
+
+    infoln "Checking [${CHAIN_NAME}] ${USER_NAME}: Actual=${ACTUAL}, Expected=${EXPECTED}"
+
+    if [ "$ACTUAL" != "$EXPECTED" ]; then
+        echo "Error: [${CHAIN_NAME}] ${USER_NAME} balance mismatch! Expected ${EXPECTED}, got ${ACTUAL}"
+        exit 1
+    else
+        echo "OK: [${CHAIN_NAME}] ${USER_NAME} balance match."
+    fi
+}
