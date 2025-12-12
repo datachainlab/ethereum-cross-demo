@@ -27,7 +27,6 @@ BAL_COORD_ALICE=$(${ERC20CLI_COORDINATOR_ALICE} erc20 balanceOf --address ${ALIC
 if [[ "$BAL_COORD_ALICE" =~ ^[0-9]+$ ]] && [ "$BAL_COORD_ALICE" -gt 0 ]; then
     infoln "Resetting Alice (Coordinator) balance: ${BAL_COORD_ALICE} -> 0"
     printERC20 "${ERC20CLI_COORDINATOR_ALICE} erc20 transfer --address ${BRIDGE_CONTRACT_ADDR} --amount ${BAL_COORD_ALICE}"
-    sleep 2
 fi
 
 # --- 2. Reset Coordinator: Bob ---
@@ -35,7 +34,6 @@ BAL_COORD_BOB=$(${ERC20CLI_COORDINATOR_BOB} erc20 balanceOf --address ${BOB_ADDR
 if [[ "$BAL_COORD_BOB" =~ ^[0-9]+$ ]] && [ "$BAL_COORD_BOB" -gt 0 ]; then
     infoln "Resetting Bob (Coordinator) balance: ${BAL_COORD_BOB} -> 0"
     printERC20 "${ERC20CLI_COORDINATOR_BOB} erc20 transfer --address ${BRIDGE_CONTRACT_ADDR} --amount ${BAL_COORD_BOB}"
-    sleep 2
 fi
 
 # --- 3. Reset Participant: Alice ---
@@ -43,7 +41,6 @@ BAL_PART_ALICE=$(${ERC20CLI_PARTICIPANT_ALICE} erc20 balanceOf --address ${ALICE
 if [[ "$BAL_PART_ALICE" =~ ^[0-9]+$ ]] && [ "$BAL_PART_ALICE" -gt 0 ]; then
     infoln "Resetting Alice (Participant) balance: ${BAL_PART_ALICE} -> 0"
     printERC20 "${ERC20CLI_PARTICIPANT_ALICE} erc20 transfer --address ${BRIDGE_CONTRACT_ADDR} --amount ${BAL_PART_ALICE}"
-    sleep 2
 fi
 
 # --- 4. Reset Participant: Bob ---
@@ -51,7 +48,6 @@ BAL_PART_BOB=$(${ERC20CLI_PARTICIPANT_BOB} erc20 balanceOf --address ${BOB_ADDRE
 if [[ "$BAL_PART_BOB" =~ ^[0-9]+$ ]] && [ "$BAL_PART_BOB" -gt 0 ]; then
     infoln "Resetting Bob (Participant) balance: ${BAL_PART_BOB} -> 0"
     printERC20 "${ERC20CLI_PARTICIPANT_BOB} erc20 transfer --address ${BRIDGE_CONTRACT_ADDR} --amount ${BAL_PART_BOB}"
-    sleep 2
 fi
 
 infoln "All balances reset complete."
