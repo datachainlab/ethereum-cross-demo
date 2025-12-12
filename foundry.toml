@@ -9,10 +9,6 @@ fs_permissions = [
 ]
 via_ir = true
 
-remappings = [
-  "src/proto/=node_modules/@datachainlab/cross-solidity/src/proto/"
-]
-
 [rpc_endpoints]
 coordinator   = "http://127.0.0.1:8545"
 participant   = "http://127.0.0.1:8546"
