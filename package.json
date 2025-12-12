@@ -1,5 +1,5 @@
 {
-  "name": "cross-solidity",
+  "name": "ethereum-cross-demo",
   "version": "0.0.1",
   "scripts": {
     "deploy-coordinator": "forge script script/DeployAll.s.sol --rpc-url coordinator --broadcast",
