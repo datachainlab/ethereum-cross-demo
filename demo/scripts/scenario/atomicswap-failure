@@ -170,12 +170,18 @@ sleep 3
 printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross coordinator-state $TX_ID"
 
 # --- 8. Final Verification ---
-infoln "### Final Balance Verification ###"
+infoln "### Final Balance Verification (Expect No Change) ###"
 
-infoln "Coordinator Balances (Expect: Alice 10, Bob 0):"
-printERC20 "${ERC20CLI_COORDINATOR_ALICE} erc20 balanceOf --address ${ALICE_ADDRESS}"
-printERC20 "${ERC20CLI_COORDINATOR_BOB} erc20 balanceOf --address ${BOB_ADDRESS}"
+# Coordinator Balances
+# Alice: 10 -> 10 (Rollback / Unchanged)
+assertBalance "Coordinator" "Alice" "${ERC20CLI_COORDINATOR_ALICE} erc20 balanceOf --address ${ALICE_ADDRESS}" "${MINT_AMT}"
+# Bob: 0 -> 0 (Rollback / Unchanged)
+assertBalance "Coordinator" "Bob" "${ERC20CLI_COORDINATOR_BOB} erc20 balanceOf --address ${BOB_ADDRESS}" "0"
 
-infoln "Participant Balances (Expect: Alice 0, Bob 10):"
-printERC20 "${ERC20CLI_PARTICIPANT_ALICE} erc20 balanceOf --address ${ALICE_ADDRESS}"
-printERC20 "${ERC20CLI_PARTICIPANT_BOB} erc20 balanceOf --address ${BOB_ADDRESS}"
+# Participant Balances
+# Alice: 0 -> 0 (Rollback / Unchanged)
+assertBalance "Participant" "Alice" "${ERC20CLI_PARTICIPANT_ALICE} erc20 balanceOf --address ${ALICE_ADDRESS}" "0"
+# Bob: 10 -> 10 (Rollback / Unchanged)
+assertBalance "Participant" "Bob" "${ERC20CLI_PARTICIPANT_BOB} erc20 balanceOf --address ${BOB_ADDRESS}" "${MINT_AMT}"
+
+infoln "✅ SUCCESS: Transaction failed atomically as expected. Balances remain unchanged."
