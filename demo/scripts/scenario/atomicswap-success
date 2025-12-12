@@ -1,5 +1,25 @@
 #!/usr/bin/env bash
 
+# ==============================================================================
+# SCENARIO: ERC20 Cross-Chain Atomic Swap (Bilateral)
+# ==============================================================================
+#
+# [ACTORS]
+#   - Alice (Coordinator Chain): Initiator. Swaps local funds for remote funds.
+#   - Bob   (Participant Chain): Counterparty. Swaps local funds for remote funds.
+#
+# [PROCESS]
+#   1. Setup: Mint tokens on both chains (Initial Balance: 10 each).
+#   2. Auth : Both define transfers and Approve bridge contract spending.
+#   3. Sign : Alice initiates the trade (InitiateTx); Bob signs to confirm agreement.
+#   4. Exec : Relayer syncs state; transfers execute simultaneously on both chains.
+#
+# [RESULT (State Transition)]
+#   Alice: [Coord: 10, Part: 0]  -> [Coord: 0,  Part: 10]
+#   Bob  : [Coord: 0,  Part: 10] -> [Coord: 10, Part: 0]
+#   * Assets are exchanged atomically.
+# ==============================================================================
+
 set -eu
 
 # --- Environment & Imports ---
