@@ -23,18 +23,16 @@ contract MyERC20TransferModuleTest is Test {
     bytes private callInfo;
 
     address private user;
-    address private receiver;
-    uint256 private constant AMOUNT = 100 ether;
 
     string private constant EXPECTED_TYPE_URL = "/extension.types.SampleAuthExtension";
     string private constant INVALID_TYPE_URL = "/extension.types.InvalidExtension";
 
     function setUp() public {
         user = makeAddr("user");
-        receiver = makeAddr("receiver");
+        address receiver = makeAddr("receiver");
         txID = abi.encode(TX_ID_RAW);
 
-        callInfo = abi.encode(user, receiver, AMOUNT);
+        callInfo = abi.encode(user, receiver, 100 ether);
 
         harness = new MyERC20TransferModuleHarness();
         harness.initialize(address(this), address(0x1));
