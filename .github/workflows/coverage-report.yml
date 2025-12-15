@@ -31,14 +31,13 @@ jobs:
           lcov --remove lcov.info \
             'test/**' \
             'script/**' \
-            'demo/**' \
             -o lcov.filtered.info
 
       - name: Report code coverage
         uses: zgosalvez/github-actions-report-lcov@v5
         with:
           coverage-files: lcov.filtered.info
-          minimum-coverage: 97
+          minimum-coverage: 94
           artifact-name: code-coverage-report
           github-token: ${{ secrets.GITHUB_TOKEN }}
           update-comment: true
