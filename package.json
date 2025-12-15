@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@hyperledger-labs/yui-ibc-solidity": "git+https://github.com/hyperledger-labs/yui-ibc-solidity.git#v0.3.40",
-    "@datachainlab/cross-solidity": "git+https://github.com/datachainlab/cross-solidity.git#fix-import-proto",
+    "@datachainlab/cross-solidity": "git+https://github.com/datachainlab/cross-solidity.git#develop",
     "@openzeppelin/contracts": "5.0.1",
     "ejs": "^3.1.10",
     "forge-std": "github:foundry-rs/forge-std#v1.11.0"
