@@ -48,6 +48,7 @@ func crossCmd(ctx *config.Context) *cobra.Command {
 		newCallInfoCmd(ctx),
 		newCreateInitiateTxCmd(ctx),
 		newSendInitiateTxCmd(ctx),
+		newSendExecuteTxCmd(ctx),
 		newTxAuthStateCmd(ctx),
 		newExtSignTxCmd(ctx),
 		newCoordinatorStateCmd(ctx),
@@ -346,6 +347,73 @@ func newSendInitiateTxCmd(ctx *config.Context) *cobra.Command {
 	cmd.Flags().String(flags.FlagOutputDocument, "", "Write output to file instead of STDOUT")
 	cmd.Flags().String(FlagEthSignKey, "", "Ethereum private key for signing")
 
+	return cmd
+}
+
+func newSendExecuteTxCmd(ctx *config.Context) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "send-execute-tx",
+		Short: "Send an ExecuteTx transaction for a simple commit",
+		Args:  cobra.ExactArgs(0),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := setupCrossClient(ctx)
+			if err != nil {
+				return err
+			}
+
+			txPath, err := cmd.Flags().GetString(FlagInitiateTx)
+			if err != nil {
+				return err
+			}
+			msg, err := readInitiateTx(ctx.Codec, txPath)
+			if err != nil {
+				return err
+			}
+
+			ethSignKey, err := cmd.Flags().GetString(FlagEthSignKey)
+			if err != nil {
+				return err
+			}
+			signer, err := getSigner(ethSignKey)
+			if err != nil {
+				return err
+			}
+
+			msg.Signers = []authtypes.Account{signer}
+			if err := msg.ValidateBasic(); err != nil {
+				return err
+			}
+
+			contractMsg := toContractMsgInitiateTxData(msg)
+
+			// Submit via CrossCMD
+			tx, err := client.ExecuteTx(contractMsg)
+			if err != nil {
+				return err
+			}
+			log.Printf("Transaction submitted: hash='%v'", tx.Hash().Hex())
+			log.Println("Waiting for transaction to be mined...")
+
+			// Wait for mining and event emission
+			event, err := client.GetTxExecutedEvent(cmd.Context(), tx)
+			if err != nil {
+				return err
+			}
+
+			log.Println("Transaction executed successfully!")
+			log.Printf("\n=== ExecuteTx Result ===\n")
+			log.Printf("TxID (Hex): 0x%x\n", event.TxID)
+			log.Printf("Sender:   %s\n", event.Proposer.Hex())
+			log.Printf("=========================\n")
+
+			return nil
+		},
+	}
+
+	cmd.Flags().String(FlagInitiateTx, "", "File path to execute-tx")
+	_ = cmd.MarkFlagRequired(FlagInitiateTx)
+	cmd.Flags().String(flags.FlagOutputDocument, "", "Write output to file instead of STDOUT")
+	cmd.Flags().String(FlagEthSignKey, "", "Ethereum private key for signing")
 	return cmd
 }
 
