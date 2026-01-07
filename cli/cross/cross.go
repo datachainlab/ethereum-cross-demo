@@ -23,8 +23,10 @@ import (
 
 type CrossCMD interface {
 	InitiateTx(msg contract.MsgInitiateTxData) (*types.Transaction, error)
+	ExecuteTx(msg contract.MsgInitiateTxData) (*types.Transaction, error)
 	ExtSignTx(msg contract.MsgExtSignTxData) (*types.Transaction, error)
 	GetTxInitiatedEvent(ctx context.Context, tx *types.Transaction) (*contract.CrosssimplemoduleTxInitiated, error)
+	GetTxExecutedEvent(ctx context.Context, tx *types.Transaction) (*contract.CrosssimplemoduleTxExecuted, error)
 	QueryTxAuthState(ctx context.Context, req contract.QueryTxAuthStateRequestData) (contract.QueryTxAuthStateResponseData, error)
 	QueryCoordinatorState(ctx context.Context, req contract.QueryCoordinatorStateRequestData) (contract.QueryCoordinatorStateResponseData, error)
 }
@@ -54,6 +56,20 @@ func (c *CrossCMDImpl) InitiateTx(msg contract.MsgInitiateTxData) (*types.Transa
 	}
 
 	tx, err := c.cross.InitiateTx(signer, msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return tx, nil
+}
+
+func (c *CrossCMDImpl) ExecuteTx(msg contract.MsgInitiateTxData) (*types.Transaction, error) {
+	signer, err := eth.CreateTransactionSigner(c.conn, c.chainID, c.pvtKey)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := c.cross.ExecuteTx(signer, msg)
 	if err != nil {
 		return nil, err
 	}
@@ -97,6 +113,30 @@ func (c *CrossCMDImpl) GetTxInitiatedEvent(ctx context.Context, tx *types.Transa
 	}
 
 	return nil, fmt.Errorf("transaction succeeded but TxInitiated event not found")
+}
+
+func (c *CrossCMDImpl) GetTxExecutedEvent(ctx context.Context, tx *types.Transaction) (*contract.CrosssimplemoduleTxExecuted, error) {
+	receipt, err := bind.WaitMined(ctx, c.conn, tx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to wait for tx receipt: %w", err)
+	}
+
+	if receipt.Status == types.ReceiptStatusFailed {
+		reason, err := getRevertReason(ctx, c.conn, tx, receipt)
+		if err != nil {
+			return nil, fmt.Errorf("transaction failed (status: 0) and failed to retrieve reason: %v", err)
+		}
+		return nil, fmt.Errorf("transaction failed (status: 0): %s", reason)
+	}
+
+	for _, l := range receipt.Logs {
+		event, err := c.cross.ParseTxExecuted(*l)
+		if err == nil {
+			return event, nil
+		}
+	}
+
+	return nil, fmt.Errorf("transaction succeeded but TxExecuted event not found")
 }
 
 func (c *CrossCMDImpl) QueryTxAuthState(ctx context.Context, req contract.QueryTxAuthStateRequestData) (contract.QueryTxAuthStateResponseData, error) {

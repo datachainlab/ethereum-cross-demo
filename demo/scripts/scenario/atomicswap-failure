@@ -152,9 +152,13 @@ printERC20 "${ERC20CLI_COORDINATOR_BOB} cross ext-sign-tx ${TX_ID} --eth-sign-ke
 sleep 3
 
 printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross tx-auth-state $TX_ID"
+
+# --- 7. Execute Cross-Chain Transaction ---
+infoln "Executing the cross-chain transaction..."
+printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross send-execute-tx --initiate-tx=${FILE_INIT_TX} --eth-sign-key=${ALICE_PRIVATE_KEY}"
 printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross coordinator-state $TX_ID"
 
-# --- 7. Relayer Operations ---
+# --- 8. Relayer Operations ---
 infoln "Relaying packets..."
 set +e
 sleep 3
@@ -169,7 +173,7 @@ sleep 3
 
 printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross coordinator-state $TX_ID"
 
-# --- 8. Final Verification ---
+# --- 9. Final Verification ---
 infoln "### Final Balance Verification (Expect No Change) ###"
 
 # Coordinator Balances
