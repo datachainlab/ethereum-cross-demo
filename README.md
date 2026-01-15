@@ -1,4 +1,4 @@
-# anvil-cross-demo
+# ethereum-cross-demo
 
 ## Requirements
 
