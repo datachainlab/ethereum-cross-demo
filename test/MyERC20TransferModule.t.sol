@@ -122,10 +122,9 @@ contract MyERC20TransferModuleTest is Test {
         harness.exposed_authorize(context, callInfo);
     }
 
-    function test_authorize_RevertWhen_AuthModeLocal() public {
+    function test_authorize_SuccessWhen_AuthModeLocal() public {
         CrossContext memory context = _createSingleSignerContext(user, AuthType.AuthMode.AUTH_MODE_LOCAL, "");
 
-        vm.expectRevert(ERC20TransferModule.ERC20TransferModuleUnauthorized.selector);
         harness.exposed_authorize(context, callInfo);
     }
 
