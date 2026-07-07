@@ -246,8 +246,17 @@ func newCreateInitiateTxCmd(ctx *config.Context) *cobra.Command {
 				return err
 			}
 
+			initiatorSignerAddr, err := cmd.Flags().GetString(FlagInitiatorLocalSigner)
+			if err != nil {
+				return err
+			}
+			signer, err := getLocalSignerFromAddress(initiatorSignerAddr)
+			if err != nil {
+				return err
+			}
+
 			msg := types.NewMsgInitiateTx(
-				nil,
+				[]authtypes.Account{signer},
 				fmt.Sprintf("%d", ctx.Config.ChainID),
 				uint64(time.Now().Unix()),
 				txtypes.COMMIT_PROTOCOL_SIMPLE,
@@ -255,6 +264,9 @@ func newCreateInitiateTxCmd(ctx *config.Context) *cobra.Command {
 				clienttypes.NewHeight(0, 10000), // Fixed height for demo
 				0,
 			)
+			if err := msg.ValidateBasic(); err != nil {
+				return err
+			}
 
 			closeFunc, err := setOutputFile(cmd)
 			if err != nil {
@@ -277,6 +289,8 @@ func newCreateInitiateTxCmd(ctx *config.Context) *cobra.Command {
 
 	cmd.Flags().StringSlice(FlagContractTransactions, nil, "File paths to contract transactions")
 	_ = cmd.MarkFlagRequired(FlagContractTransactions)
+	cmd.Flags().String(FlagInitiatorLocalSigner, "", "Initiator local signer address")
+	_ = cmd.MarkFlagRequired(FlagInitiatorLocalSigner)
 	cmd.Flags().String(flags.FlagOutputDocument, "", "Write output to file instead of STDOUT")
 
 	return cmd
@@ -302,16 +316,6 @@ func newSendInitiateTxCmd(ctx *config.Context) *cobra.Command {
 				return err
 			}
 
-			ethSignKey, err := cmd.Flags().GetString(FlagEthSignKey)
-			if err != nil {
-				return err
-			}
-			signer, err := getSigner(ethSignKey)
-			if err != nil {
-				return err
-			}
-
-			msg.Signers = []authtypes.Account{signer}
 			if err := msg.ValidateBasic(); err != nil {
 				return err
 			}
@@ -345,7 +349,6 @@ func newSendInitiateTxCmd(ctx *config.Context) *cobra.Command {
 	cmd.Flags().String(FlagInitiateTx, "", "File path to initiate-tx")
 	_ = cmd.MarkFlagRequired(FlagInitiateTx)
 	cmd.Flags().String(flags.FlagOutputDocument, "", "Write output to file instead of STDOUT")
-	cmd.Flags().String(FlagEthSignKey, "", "Ethereum private key for signing")
 
 	return cmd
 }
@@ -370,16 +373,6 @@ func newSendExecuteTxCmd(ctx *config.Context) *cobra.Command {
 				return err
 			}
 
-			ethSignKey, err := cmd.Flags().GetString(FlagEthSignKey)
-			if err != nil {
-				return err
-			}
-			signer, err := getSigner(ethSignKey)
-			if err != nil {
-				return err
-			}
-
-			msg.Signers = []authtypes.Account{signer}
 			if err := msg.ValidateBasic(); err != nil {
 				return err
 			}
@@ -413,7 +406,6 @@ func newSendExecuteTxCmd(ctx *config.Context) *cobra.Command {
 	cmd.Flags().String(FlagInitiateTx, "", "File path to execute-tx")
 	_ = cmd.MarkFlagRequired(FlagInitiateTx)
 	cmd.Flags().String(flags.FlagOutputDocument, "", "Write output to file instead of STDOUT")
-	cmd.Flags().String(FlagEthSignKey, "", "Ethereum private key for signing")
 	return cmd
 }
 
@@ -439,9 +431,19 @@ func newCreateContractTxCmd(ctx *config.Context) *cobra.Command {
 				return err
 			}
 
+			authMode, err := cmd.Flags().GetString(FlagAuthMode)
+			if err != nil {
+				return err
+			}
+
+			authType, err := getContractTxAuthType(authMode)
+			if err != nil {
+				return err
+			}
+
 			account := authtypes.Account{
 				Id:       common.HexToAddress(signerStr).Bytes(),
-				AuthType: authtypes.NewAuthTypeExtension(&extauthtypes.SampleAuthExtension{}),
+				AuthType: authType,
 			}
 
 			callInfoHex, err := cmd.Flags().GetString(FlagCallInfo)
@@ -495,6 +497,7 @@ func newCreateContractTxCmd(ctx *config.Context) *cobra.Command {
 	_ = cmd.MarkFlagRequired(FlagInitiatorChainChannel)
 	cmd.Flags().String(FlagSigner, "", "Signer address")
 	_ = cmd.MarkFlagRequired(FlagSigner)
+	cmd.Flags().String(FlagAuthMode, "extension", "Signer auth mode: local or extension")
 	cmd.Flags().String(FlagCallInfo, "", "Call info hex")
 	_ = cmd.MarkFlagRequired(FlagCallInfo)
 	cmd.Flags().String(flags.FlagOutputDocument, "", "Write output to file instead of STDOUT")
@@ -597,6 +600,36 @@ func getSigner(ethSignKey string) (authtypes.Account, error) {
 		Id:       addr,
 		AuthType: authtypes.NewAuthTypeExtension(&extauthtypes.SampleAuthExtension{}),
 	}, nil
+}
+
+func getLocalSigner(cfg *config.Config) (authtypes.Account, error) {
+	privKey, err := cfg.PrivateKey()
+	if err != nil {
+		return authtypes.Account{}, err
+	}
+	return getLocalSignerFromAddress(crypto.PubkeyToAddress(privKey.PublicKey).Hex())
+}
+
+func getLocalSignerFromAddress(address string) (authtypes.Account, error) {
+	if !common.IsHexAddress(address) {
+		return authtypes.Account{}, fmt.Errorf("invalid initiator local signer address: %s", address)
+	}
+
+	return authtypes.Account{
+		Id:       common.HexToAddress(address).Bytes(),
+		AuthType: authtypes.NewAuthTypeLocal(),
+	}, nil
+}
+
+func getContractTxAuthType(authMode string) (authtypes.AuthType, error) {
+	switch strings.ToLower(authMode) {
+	case "local":
+		return authtypes.NewAuthTypeLocal(), nil
+	case "extension":
+		return authtypes.NewAuthTypeExtension(&extauthtypes.SampleAuthExtension{}), nil
+	default:
+		return authtypes.AuthType{}, fmt.Errorf("invalid auth mode: %s", authMode)
+	}
 }
 
 func readContractTransactions(pathList []string, unmarshal func([]byte, proto.Message) error) ([]types.ContractTransaction, error) {

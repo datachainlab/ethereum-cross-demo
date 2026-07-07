@@ -20,17 +20,22 @@ contract MyERC20TransferModule is ERC20TransferModule {
             bytes calldata id = context.signers[i].id;
 
             if (id.length == 20 && address(uint160(bytes20(id))) == from) {
-                if (context.signers[i].auth_type.mode != AuthType.AuthMode.AUTH_MODE_EXTENSION) {
-                    continue;
+                AuthType.AuthMode mode = context.signers[i].auth_type.mode;
+                if (mode == AuthType.AuthMode.AUTH_MODE_LOCAL) {
+                    authorized = true;
+                    break;
                 }
-                if (
-                    keccak256(abi.encodePacked(context.signers[i].auth_type.option.type_url)) != EXTENSION_TYPE_URL_HASH
-                ) {
-                    continue;
-                }
+                if (mode == AuthType.AuthMode.AUTH_MODE_EXTENSION) {
+                    if (
+                        keccak256(abi.encodePacked(context.signers[i].auth_type.option.type_url))
+                            != EXTENSION_TYPE_URL_HASH
+                    ) {
+                        continue;
+                    }
 
-                authorized = true;
-                break;
+                    authorized = true;
+                    break;
+                }
             }
         }
 

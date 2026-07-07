@@ -17,6 +17,8 @@ const (
 	FlagArguments             = "arguments"
 	FlagArgumentTypes         = "argument-types"
 	FlagEthSignKey            = "eth-sign-key"
+	FlagAuthMode              = "auth-mode"
 	FlagContractTransactions  = "contract-txs"
 	FlagInitiateTx            = "initiate-tx"
+	FlagInitiatorLocalSigner  = "initiator-local-signer"
 )

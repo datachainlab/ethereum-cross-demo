@@ -99,6 +99,7 @@ CALL_INFO_BOB=${CALL_INFO_BOB#0x}
 printERC20 "${ERC20CLI_PARTICIPANT_PLATFORMER} cross create-contract-tx \
     --initiator-chain-channel ${CHAN_PART} \
     --signer ${BOB_ADDRESS} \
+    --auth-mode extension \
     --call-info ${CALL_INFO_BOB} \
     --output-document ${FILE_TX_BOB}"
 
@@ -115,6 +116,7 @@ CALL_INFO_ALICE=${CALL_INFO_ALICE#0x}
 printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross create-contract-tx \
     --initiator-chain-channel ${CHAN_COORD} \
     --signer ${ALICE_ADDRESS} \
+    --auth-mode local \
     --call-info ${CALL_INFO_ALICE} \
     --output-document ${FILE_TX_ALICE}"
 
@@ -126,12 +128,12 @@ infoln "Creating and Sending InitiateTx..."
 # Create composite transaction file
 printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross create-initiate-tx \
     --contract-txs=${FILE_TX_ALICE},${FILE_TX_BOB} \
+    --initiator-local-signer=${ALICE_ADDRESS} \
     --output-document=${FILE_INIT_TX}"
 
 # Send transaction and capture output
-CMD="${ERC20CLI_COORDINATOR_PLATFORMER} cross send-initiate-tx \
-    --initiate-tx=${FILE_INIT_TX} \
-    --eth-sign-key=${ALICE_PRIVATE_KEY}"
+CMD="${ERC20CLI_COORDINATOR_ALICE} cross send-initiate-tx \
+    --initiate-tx=${FILE_INIT_TX}"
 
 infoln "Executing: $CMD"
 OUTPUT=$(eval $CMD) || { echo "Error: Transaction failed."; exit 1; }
@@ -155,7 +157,7 @@ printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross tx-auth-state $TX_ID"
 
 # --- 7. Execute Cross-Chain Transaction ---
 infoln "Executing the cross-chain transaction..."
-printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross send-execute-tx --initiate-tx=${FILE_INIT_TX} --eth-sign-key=${ALICE_PRIVATE_KEY}"
+printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross send-execute-tx --initiate-tx=${FILE_INIT_TX}"
 printERC20 "${ERC20CLI_COORDINATOR_PLATFORMER} cross coordinator-state $TX_ID"
 
 # --- 8. Relayer Operations ---
